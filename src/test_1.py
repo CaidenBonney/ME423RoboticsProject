@@ -13,7 +13,7 @@ import numpy as np
 # print(os.listdir())
  
 # Read image
-im = cv2.imread("pictures/ball_2.jpg", cv2.IMREAD_GRAYSCALE)
+im = cv2.imread("pictures/ball_1.jpg", cv2.IMREAD_GRAYSCALE)
  
 # Set up the detector with default parameters.
 params = cv2.SimpleBlobDetector_Params()
@@ -24,7 +24,7 @@ params.blobColor = 255
 
 # Size filtering (tune minArea for your image)
 params.filterByArea = True
-params.minArea = 500 # used to be 100
+params.minArea = 100 # used to be 100
 params.maxArea = 200000
 
 # Shape filtering (reject edges/corners)
