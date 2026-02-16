@@ -1,0 +1,3 @@
+pyrealsense2-macosx
+opencv-python
+numpy
