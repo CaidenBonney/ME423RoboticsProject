@@ -9,19 +9,25 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
+import time
+
+# show code is running
+print(f"Running...{time.time()}")
 
 # Create a context object. This object owns the handles to all connected realsense devices
 pipeline = rs.pipeline()
 
-# Configure streams
+# Configure streamss
 config = rs.config()
 config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
 
-# Start streaming
+# Start streamingl
 pipeline.start(config)
 
-cap = cv2.VideoCapture(2) # This number may be different for every machine. It corresponds to the port that the camera is attached to
+cap = cv2.VideoCapture(3) # This number may be different for every machine. It corresponds to the port that the camera is attached to
 # capture 10 images!
+
+#index = 3 for lab computers
 for i in range(10):
     ret, frame = cap.read()
     if ret:
@@ -58,7 +64,7 @@ try:
         cv2.imshow('RealSense', depth_image)
     exit(0)
 except rs.error as e:
-   # Method calls agaisnt librealsense objects may throw exceptions of type pylibrs.error
+   # Method calls against librealsense objects may throw exceptions of type pylibrs.error
 #    print("pylibrs.error was thrown when calling %s(%s):\n", % (e.get_failed_function(), e.get_failed_args()))
    print("    %s\n", e.what())
    exit(1)
