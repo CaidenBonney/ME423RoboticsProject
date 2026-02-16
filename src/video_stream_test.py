@@ -10,6 +10,32 @@ import pyrealsense2 as rs
 import numpy as np
 import cv2
 
+# Create a context object. This object owns the handles to all connected realsense devices
+pipeline = rs.pipeline()
+
+# Configure streams
+config = rs.config()
+config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+
+# Start streaming
+pipeline.start(config)
+
+cap = cv2.VideoCapture(2) # This number may be different for every machine. It corresponds to the port that the camera is attached to
+# capture 10 images!
+for i in range(10):
+    ret, frame = cap.read()
+    if ret:
+        # Display the frame using imshow
+        cv2.imshow("Captured Frame", frame)
+        cv2.waitKey(0)  # Wait for a key press to close the window
+        cv2.destroyAllWindows()  # Close the window
+    else:
+        print("Error: Could not capture a frame.")
+
+
+
+
+# show video stream
 try:
     # Create a context object. This object owns the handles to all connected realsense devices
     pipeline = rs.pipeline()
