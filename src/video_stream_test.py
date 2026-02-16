@@ -20,7 +20,7 @@ config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
 # Start streaming
 pipeline.start(config)
 
-cap = cv2.VideoCapture(2) # This number may be different for every machine. It corresponds to the port that the camera is attached to
+cap = cv2.VideoCapture(0) # This number may be different for every machine. It corresponds to the port that the camera is attached to
 # capture 10 images!
 for i in range(10):
     ret, frame = cap.read()
