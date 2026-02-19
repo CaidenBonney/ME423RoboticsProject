@@ -14,34 +14,48 @@
 
 from quanser.hardware import HIL, HILError, Clock
 import math
-import array as arr
+from array import array
 
-board_type = "q2_usb"
+board_type = "qarm_usb"
 board_identifier = "0"
 
 try:
-    card = HIL()
-    card.open(board_type, board_identifier)
+    # Constructs a new HIL object and immediately connects to the specified board.
+    card = HIL(board_type, board_identifier)
 
     try:
-        channels = arr.array("i", [0, 1, 2, 3])
-        num_channels = len(channels)
+        # Test Writing 
+        # initialize the write channels and buffer arrays
+        write_channels = array('I', [0, 1, 2, 3])
+        buffer = array("B", [0] * len(write_channels))
+        num_channels = len(write_channels)
+        
+        buffer = array('d', [0.5, 1.5, 2.5, 3.5])
+        card.write_analog(write_channels, num_channels, buffer)
+        
+        
+        # Test Reading
+        # initialize the channels and values arrays
+        read_channels = array("I", [i for i in range(4, 10)])
+        values = array("B", [0] * len(read_channels))
 
-        values = arr.array("b", [0] * num_channels)
+        # read the digital values
+        card.read_digital(read_channels, len(read_channels), values)
 
-        card.read_digital(channels, num_channels, values)
-        for channel in range(num_channels):
-            print("DIG #%d: %d" % (channels[channel], values[channel]), end="   ")
+        # print the results
+        for channel in range(len(read_channels)):
+            print("DIG #%d: %d" % (read_channels[channel], values[channel]), end="   ")
         print()
-
+        
     except HILError as ex:
         print("Unable to read channels. %s" % ex.get_error_message())
 
+    # Close the connection to the board after use
     finally:
         card.close()
 
 except HILError as ex:
     print("Unable to open board. %s" % ex.get_error_message())
 
-input("Press Enter to continue.")
-exit(0)
+input("Press Enter to Quit.")
+quit()
