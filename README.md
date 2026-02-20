@@ -41,3 +41,8 @@ After creating the virtual environment, set the python interpreter to the virtua
 
 ## Installing required packages (paste into terminal):
 pip install -r requirements.txt
+
+## Interfacing with Github
+
+In the terminal run
+git clone 
