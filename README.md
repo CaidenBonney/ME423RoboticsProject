@@ -6,7 +6,7 @@ Compilation of all code for the Cal Poly ME423 Robotics Project
 3.11.9
 
 # Windows Installation Instructions:
-Go to Windows PowerShell and paste the following:
+### Go to Windows PowerShell and paste the following:
 
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 irm get.scoop.sh | iex
@@ -24,7 +24,7 @@ After creating the virtual environment, set the python interpreter to the virtua
 ">Python: Select Interpreter" > then select the virual environment you just created (says recommended next to it).
 
 # Mac Installation Instructions:
-Go to Terminal and paste the following:
+### Go to Terminal and paste the following:
 
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
