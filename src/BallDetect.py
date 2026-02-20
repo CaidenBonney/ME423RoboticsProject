@@ -2,7 +2,7 @@
 # ## Copyright(c) 2015-2017 RealSense, Inc. All Rights Reserved.
 
 # #####################################################
-# ## librealsense tutorial #1 - Accessing depth data ##
+# ## librealsense tutorial #1 - Accessing depth data ###
 # #####################################################
 
 # # First import the library
