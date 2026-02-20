@@ -23,7 +23,7 @@ max_distance = 1 # meters (for depth camera)
 ## Initialize the RealSense camera for RGB and Depth data
 # change hardware to 1 if using a physical arm instead of a virtual one.
 with QArmRealSense(mode='RGB&DEPTH',
-                   hardware=0,
+                   hardware=1,
                    deviceID= 0,
                    frameWidthRGB=imageWidth,
                    frameHeightRGB=imageHeight,
