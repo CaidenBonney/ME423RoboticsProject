@@ -1,0 +1,4 @@
+pyrealsense2-macosx
+opencv-python
+pyserial
+numpy

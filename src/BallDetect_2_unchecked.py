@@ -178,7 +178,7 @@ if __name__ == "__main__":
 
     # Instantiate segmenter
     seg = PingPongBallSegmenter(
-        radius_range=(6, 80),        # widen initially; tighten once you know typical pixel radius
+        radius_range=(500, 1000),        # widen initially; tighten once you know typical pixel radius
         min_circularity=0.55,        # loosen a bit for partial blobs
         mog2_history=200,
         mog2_var_threshold=16,
