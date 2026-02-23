@@ -66,19 +66,19 @@ else:
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-    # # If your model only has 1 class (ball), you can skip class filtering.
-    # best_i = int(np.argmax(conf))
+    # If your model only has 1 class (ball), you can skip class filtering.
+    best_i = int(np.argmax(conf))
 
-    # x1, y1, x2, y2 = xyxy[best_i]
-    # cx = 0.5 * (x1 + x2)
-    # cy = 0.5 * (y1 + y2)
-    # ball_center = (float(cx), float(cy))
+    x1, y1, x2, y2 = xyxy[best_i]
+    cx = 0.5 * (x1 + x2)
+    cy = 0.5 * (y1 + y2)
+    ball_center = (float(cx), float(cy))
 
-    # print(f"Ball center: (cx, cy) = ({cx:.1f}, {cy:.1f}), conf={conf[best_i]:.2f}")
+    print(f"Ball center: (cx, cy) = ({cx:.1f}, {cy:.1f}), conf={conf[best_i]:.2f}")
 
-    # # Optional: visualize
-    # cv2.rectangle(im_bgr, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-    # cv2.circle(im_bgr, (int(cx), int(cy)), 4, (0, 255, 0), -1)
-    # cv2.imshow("Detection", im_bgr)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+    # Optional: visualize
+    cv2.rectangle(im_bgr, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+    cv2.circle(im_bgr, (int(cx), int(cy)), 4, (0, 255, 0), -1)
+    cv2.imshow("Detection", im_bgr)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
