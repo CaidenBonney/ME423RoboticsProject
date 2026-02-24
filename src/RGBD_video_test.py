@@ -43,9 +43,9 @@ print("RUNNING...")
 try:
     # cv2.VideoWriter(filename, fourcc, fps, frame_size, isColor)
     # Define the codec and create VideoWriter object
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    rgb_video_writer = cv2.VideoWriter("src\videos\rgb_video_1.mp4", fourcc, 60, (640, 480), True)
-    depth_video_writer = cv2.VideoWriter("src\videos\depth_video_1.mp4", fourcc, 60, (640, 480), False)
+    fourcc = cv2.VideoWriter_fourcc(*'h264')
+    rgb_video_writer = cv2.VideoWriter("src\\videos\\rgb_video_arc.mp4", fourcc, 60, (640, 480), True)
+    depth_video_writer = cv2.VideoWriter("src\\videos\\depth_video_arc.mp4", fourcc, 60, (640, 480), False)
 
     # Create a context object. This object owns the handles to all connected realsense devices
     rgb_pipeline = rs.pipeline()
@@ -62,6 +62,7 @@ try:
     depth_pipeline.start(depth_config)
     cv2.namedWindow('depth_cam', cv2.WINDOW_AUTOSIZE)
     cv2.namedWindow('rgb_cam', cv2.WINDOW_AUTOSIZE)
+    cv2.namedWindow('Canny Edges', cv2.WINDOW_AUTOSIZE)
     rgb_frames_count = 0
     depth_frames_count = 0
     start_time = time.time()
@@ -78,6 +79,18 @@ try:
             cv2.imshow('rgb_cam', rgb_image)
             rgb_video_writer.write(rgb_image)
             rgb_frames_count += 1
+            # Our operations on the frame come here
+            hsv = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2HSV)
+            # 2. Optional: Apply Gaussian blur to reduce noise
+            # The Canny function does internal blurring, but extra can help for noisy images
+            gray = hsv[:,:,0]
+            blurred = cv2.GaussianBlur(gray, (5, 5), 1)
+            # 3. Apply the Canny edge detector
+            # Common practice is to use a 2:1 or 3:1 ratio for the thresholds (e.g., 50 and 150)
+            edges = cv2.Canny(blurred, 100, 150) # The output is a binary image (edge map)
+            # 4. Display the results
+            cv2.imshow('Canny Edges', edges)
+
         (depth_frame_present, depth_frames) = depth_pipeline.try_wait_for_frames()
         if depth_frame_present:
             depth_timestamp = time.time()
