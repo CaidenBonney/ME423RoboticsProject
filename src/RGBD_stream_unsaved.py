@@ -41,12 +41,6 @@ print("RUNNING...")
  
 # show video stream
 try:
-    # cv2.VideoWriter(filename, fourcc, fps, frame_size, isColor)
-    # Define the codec and create VideoWriter object
-    fourcc = cv2.VideoWriter_fourcc(*'h264')
-    rgb_video_writer = cv2.VideoWriter("src\\videos\\rgb_video_arc.mp4", fourcc, 60, (640, 480), True)
-    depth_video_writer = cv2.VideoWriter("src\\videos\\depth_video_arc.mp4", fourcc, 60, (640, 480), False)
-
     # Create a context object. This object owns the handles to all connected realsense devices
     rgb_pipeline = rs.pipeline()
     depth_pipeline = rs.pipeline()
@@ -66,7 +60,7 @@ try:
     rgb_frames_count = 0
     depth_frames_count = 0
     start_time = time.time()
-    while rgb_frames_count < 600:
+    while True:
         # This call waits until a new coherent set of frames is available on a device
         # Calls to get_frame_data(...) and get_frame_timestamp(...) on a device will return stable values until wait_for_frames(...) is called
         (rgb_frame_present, rgb_frames) = rgb_pipeline.try_wait_for_frames()
@@ -77,7 +71,6 @@ try:
             rgb_timestamp = rgb_frames.get_timestamp()
             rgb_image = np.asanyarray(rgb.get_data())
             cv2.imshow('rgb_cam', rgb_image)
-            rgb_video_writer.write(rgb_image)
             rgb_frames_count += 1
             # Our operations on the frame come here
             hsv = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2HSV)
@@ -100,13 +93,11 @@ try:
             depth_data = depth.get_data()
             depth_image = np.asanyarray(depth.get_data())
             cv2.imshow('depth_cam', depth_image)
-            depth_video_writer.write(depth_image)
             depth_frames_count += 1
-        cv2.waitKey(1)
         print(f"FRAME {rgb_frames_count} CAPTURED...{rgb_timestamp - start_time}")
+        if cv2.waitKey(1) == ord('q'):
+            break
     exit(0)
-    rgb_video_writer.release()
-    depth_video_writer.release()
 except Exception as e:
     print("FAILED")
     print(e)

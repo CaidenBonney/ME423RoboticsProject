@@ -1,3 +1,6 @@
+#  Saved Videos are in OneDrive, too large For GitHub
+src/videos/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
