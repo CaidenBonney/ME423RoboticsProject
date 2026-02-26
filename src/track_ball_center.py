@@ -1,5 +1,4 @@
 ################################################################################
-# IF RERUN, DELETE THE CSV FILES BEFORE RUNNING THE TRACKER ####################
 # MAIN BLOCK AT BOTTOM TO RUN THE TRACKER AND SAVE RESULTS  ####################
 ################################################################################
 
@@ -224,6 +223,8 @@ def track_white_ball(
 
 
 if __name__ == "__main__":
+    # Note: amount of frames to warmup the background model has decent effect on results
+    
     track_white_ball(in_path = "src/videos/rgb_video_arc.mp4",
     out_video_path = "src/videos/tracked_ball_arc.mp4",
     out_csv_path = "src/videos/ball_centers_arc.csv",
