@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 import time
 
-cap = cv2.VideoCapture("src\\videos\\rgb_video_2.mp4") # This number may be different for every machine. It corresponds to the port that the camera is attached to
+cap = cv2.VideoCapture("src/videos/rgb_video_2.mp4") # This number may be different for every machine. It corresponds to the port that the camera is attached to
 if not cap.isOpened():
     print("Cannot open camera")
     exit()
