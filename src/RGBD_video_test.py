@@ -44,8 +44,8 @@ try:
     # cv2.VideoWriter(filename, fourcc, fps, frame_size, isColor)
     # Define the codec and create VideoWriter object
     fourcc = cv2.VideoWriter_fourcc(*'h264')
-    rgb_video_writer = cv2.VideoWriter("src\\videos\\rgb_video_arc.mp4", fourcc, 60, (640, 480), True)
-    depth_video_writer = cv2.VideoWriter("src\\videos\\depth_video_arc.mp4", fourcc, 60, (640, 480), False)
+    rgb_video_writer = cv2.VideoWriter("src\\videos\\rgb_video_drop.h264", fourcc, 60, (640, 480), True)
+    depth_video_writer = cv2.VideoWriter("src\\videos\\depth_video_drop.h264", fourcc, 60, (640, 480), False)
 
     # Create a context object. This object owns the handles to all connected realsense devices
     rgb_pipeline = rs.pipeline()
