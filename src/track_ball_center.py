@@ -64,7 +64,7 @@ def track_white_ball(
 
     writer = cv2.VideoWriter(
         out_video_path,
-        cv2.VideoWriter_fourcc(*"avc1"),
+        cv2.VideoWriter_fourcc(*"mp4v"),
         fps,
         (W, H),
         True,
@@ -205,11 +205,10 @@ def track_white_ball(
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
             cv2.putText(out, f"circ={best['circularity']:.2f} sol={best['solidity']:.2f} asp={best['aspect']:.2f}",
                         (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-            records.append((frame_idx, cx, cy, best["area"], best["circularity"], best["solidity"], best["aspect"]))
         else:
-            records.append((frame_idx, np.nan, np.nan, 0, 0.0, 0.0, 0.0))
-
+            cv2.putText(out, "No ball detected", (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            
         writer.write(out)
         frame_idx += 1
 
