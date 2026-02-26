@@ -7,8 +7,8 @@ import numpy as np
 
 CALIBRATION_FILE = "camera_calib.yml"   # <-- path to your calibration YAML
 MARKER_ID = 67
-MARKER_LENGTH = 0.08  # marker side length in meters (change to yours)
-CAMERA_INDEX = 0
+MARKER_LENGTH = 0.07  # marker side length in meters (change to yours)
+CAMERA_INDEX = 3
 
 # IMPORTANT: must match how marker 67 was created
 ARUCO_DICT = cv2.aruco.DICT_4X4_250
@@ -18,19 +18,22 @@ ARUCO_DICT = cv2.aruco.DICT_4X4_250
 # ==========================
 
 def load_calibration(path):
-    fs = cv2.FileStorage(path, cv2.FILE_STORAGE_READ)
-    if not fs.isOpened():
-        raise FileNotFoundError("Could not open calibration file")
+    # fs = cv2.FileStorage(path, cv2.FILE_STORAGE_READ)
+    # if not fs.isOpened():
+    #     raise FileNotFoundError("Could not open calibration file")
 
-    camera_matrix = fs.getNode("camera_matrix").mat()
-    dist_coeffs = fs.getNode("distortion_coefficients").mat()
+    # camera_matrix = fs.getNode("camera_matrix").mat()
+    camera_matrix = np.array(([800, 0, 320], [0, 800, 240],[0, 0, 1]), dtype=np.float32)
+    dist_coeffs = np.zeros((5, 1), dtype=np.float32)
 
-    fs.release()
+    # dist_coeffs = fs.getNode("distortion_coefficients").mat()
 
-    if camera_matrix is None:
-        camera_matrix = fs.getNode("cameraMatrix").mat()
-    if dist_coeffs is None:
-        dist_coeffs = fs.getNode("distCoeffs").mat()
+    # fs.release()
+
+    # if camera_matrix is None:
+    #     camera_matrix = fs.getNode("cameraMatrix").mat()
+    # if dist_coeffs is None:
+    #     dist_coeffs = fs.getNode("distCoeffs").mat()
 
     return camera_matrix, dist_coeffs
 
@@ -113,6 +116,7 @@ while True:
                     T_cam_in_marker[:3, :3] = R_cam
                     T_cam_in_marker[:3, 3] = tvec_cam.reshape(3)
 
+                    """
                     print("\n=== Marker 67 Detected ===")
                     print("Camera Position in Marker Frame (meters):")
                     print(tvec_cam.reshape(3))
@@ -120,7 +124,7 @@ while True:
                     print(rvec_cam.reshape(3))
                     print("4x4 Transformation Matrix:")
                     print(T_cam_in_marker)
-
+                    """
                     # Draw results for visualization
                     cv2.aruco.drawDetectedMarkers(frame, corners, ids)
                     cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, MARKER_LENGTH * 0.75)

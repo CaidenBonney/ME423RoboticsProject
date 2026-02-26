@@ -3,7 +3,7 @@ import numpy as np
 import glob
 
 # Checkerboard settings
-CHECKERBOARD = (7, 7)
+CHECKERBOARD = (6, 6)
 SQUARE_SIZE = 0.0255  # meters (2.55 cm squares)
 
 # Prepare object points
@@ -14,31 +14,27 @@ objp *= SQUARE_SIZE
 objpoints = []
 imgpoints = []
 
-images = glob.glob('calib_images/*.jpg')  # Put images in folder
-
+images = glob.glob('sample_images/*.png')  # Put images in folder
+size = [640, 480]  # Image size (width, height) - change if your images are different
 for fname in images:
     img = cv2.imread(fname)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     ret, corners = cv2.findChessboardCorners(gray, CHECKERBOARD, None)
 
     if ret:
         objpoints.append(objp)
         imgpoints.append(corners)
-
         cv2.drawChessboardCorners(img, CHECKERBOARD, corners, ret)
         cv2.imshow('img', img)
         cv2.waitKey(200)
 
-cv2.destroyAllWindows()
 
 ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
-    objpoints,
-    imgpoints,
-    gray.shape[::-1],
-    None,
-    None
-)
+objpoints,
+imgpoints,
+size,
+None,
+None)
 
 # Save calibration file
 fs = cv2.FileStorage("camera_calib.yml", cv2.FILE_STORAGE_WRITE)
