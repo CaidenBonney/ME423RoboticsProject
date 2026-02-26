@@ -113,7 +113,7 @@ try:
             cv2.imshow('Canny Edges', edges)
             depth_frames_count += 1
         print(f"FRAME {rgb_frames_count} CAPTURED...{rgb_timestamp - start_time}")
-        if cv2.waitKey(10) == ord('q'):
+        if cv2.waitKey(1) == ord('q'):
             break
     exit(0)
 except Exception as e:
