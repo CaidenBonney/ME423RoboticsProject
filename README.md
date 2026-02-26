@@ -17,7 +17,7 @@ uv python install 3.12.10
 uv python update-shell
 
 ### Create a virtual environment after opening the project in VS Code by pasting the following into the terminal:
-uv venv --python 3.12.10
+uv run --python 3.12.10 python -m venv .venv
 
 After creating the virtual environment, set the python interpreter to the virtual environment by going to VS Code's Search at the top:
 ">Python: Select Interpreter" > then select the virual environment you just created (says recommended next to it).
