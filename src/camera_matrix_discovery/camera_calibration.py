@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import glob
+import os
+
 
 # Checkerboard settings
 CHECKERBOARD = (6, 6)
@@ -14,11 +16,14 @@ objp *= SQUARE_SIZE
 objpoints = []
 imgpoints = []
 
-images = glob.glob('sample_images/*.png')  # Put images in folder
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+images = glob.glob(os.path.join(script_dir, "sample_images", "*.png"))
+
 size = [640, 480]  # Image size (width, height) - change if your images are different
 for fname in images:
     img = cv2.imread(fname)
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     ret, corners = cv2.findChessboardCorners(gray, CHECKERBOARD, None)
 
     if ret:
