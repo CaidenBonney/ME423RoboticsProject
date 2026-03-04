@@ -3,25 +3,28 @@ from hal.products.qarm import QArmUtilities
 import time
 import numpy as np
 
-#region: Setup
+# region: Setup
 # Timing Parameters and methods
 startTime = time.time()
+
+
 def elapsed_time():
     return time.time() - startTime
 
+
 sampleRate = 200
-sampleTime = 1/sampleRate
+sampleTime = 1 / sampleRate
 
 # Load QArm in Position Mode
 myArm = QArm(hardware=1)
 myArmUtilities = QArmUtilities()
-print('Sample Rate is ', sampleRate, ' Hz. Simulation will run until you type Ctrl+C to exit.')
+print("Sample Rate is ", sampleRate, " Hz. Simulation will run until you type Ctrl+C to exit.")
 
 # Reset startTime before Main Loop
 startTime = time.time()
-#endregion
+# endregion
 
-#region: Main Loop
+# region: Main Loop
 try:
     while myArm.status:
         # Start timing this iteration
@@ -45,4 +48,4 @@ except KeyboardInterrupt:
 finally:
     myArm.terminate()
 
-#endregion
+# endregion
