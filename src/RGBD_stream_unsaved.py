@@ -86,21 +86,19 @@ try:
     k3 = np.ones((3, 3), np.uint8)
 
     # Create a context object. This object owns the handles to all connected realsense devices
-    rgb_pipeline = rs.pipeline()
-    depth_pipeline = rs.pipeline()
+ 
+    # configure depth and color streamss
+    pipeline = rs.pipeline()
+    cfg = rs.config()
+    cfg.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 60)
+    cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 60)
+    profile = pipeline.start(cfg)
 
-    # Configure streams
-    depth_config = rs.config()
-    depth_config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 60)
-    rgb_config = rs.config()
-    rgb_config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 60)
+    align_to = rs.stream.color
+    align = rs.align(align_to)
 
-    # Start streaming
-    rgb_pipeline.start(rgb_config)
-    depth_pipeline.start(depth_config)
     cv2.namedWindow('depth_cam', cv2.WINDOW_AUTOSIZE)
     cv2.namedWindow('rgb_cam', cv2.WINDOW_AUTOSIZE)
-    cv2.namedWindow('Canny Edges', cv2.WINDOW_AUTOSIZE)
     frames_count = 0
     start_time = time.time()
 
@@ -108,18 +106,22 @@ try:
     while True:
         # This call waits until a new coherent set of frames is available on a device
         # Calls to get_frame_data(...) and get_frame_timestamp(...) on a device will return stable values until wait_for_frames(...) is called
-        (rgb_frame_present, rgb_frames) = rgb_pipeline.try_wait_for_frames()
-        (depth_frame_present, depth_frames) = depth_pipeline.try_wait_for_frames()
-        if rgb_frame_present and depth_frame_present:
+        
+        frames = pipeline.wait_for_frames()
+        aligned_frames = align.process(frames)
+
+        rgb_frames = aligned_frames.get_color_frame()
+        depth_frames = aligned_frames.get_depth_frame()
+        
+        # if rgb_frame_present and depth_frame_present:
+        if rgb_frames and depth_frames:
             rgb_timestamp = time.time()
             depth_timestamp = time.time()
-            # rgb_frames = rgb_pipeline.wait_for_frames()
-            rgb = rgb_frames.get_color_frame()
+            rgb = rgb_frames#.get_color_frame()
             rgb_timestamp = rgb_frames.get_timestamp()
             rgb_image = np.asanyarray(rgb.get_data())
             # handle depth pipeline
-            # depth_frames = depth_pipeline.wait_for_frames()
-            depth = depth_frames.get_depth_frame()
+            depth = depth_frames#.get_depth_frame()
             depth_timestamp = depth_frames.get_timestamp()
             depth_data = depth.get_data()
             # depth_image = np.asanyarray(depth.get_data())
@@ -252,10 +254,8 @@ try:
 
 
             # display rgb and depth frames
-            # cv2.imshow('rgb_cam', rgb_image)
             cv2.imshow('rgb_cam', out)
             cv2.imshow('depth_cam', depth_map)
-            # cv2.imshow('Canny Edges', edges)
         print(f"FRAME {frames_count} CAPTURED...{rgb_timestamp - start_time}")
         if cv2.waitKey(1) == ord('q'):
             break
