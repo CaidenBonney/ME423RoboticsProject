@@ -8,7 +8,7 @@ import numpy as np
 
 
 class Arm:
-    def __init__(self):
+    def __init__(self) -> None:
         # Internal variables from basic position mode py files
         self.startTime = time.time()
         self.sampleRate = 200
@@ -18,16 +18,16 @@ class Arm:
         # print("Sample Rate is ", self.sampleRate, " Hz. Simulation will run until you type Ctrl+C to exit.")
 
         # Internal variables for current state of the arm
-        self._phi = [0, 0, 0, 0]  # [rad] joint angles for 4 joints in order: base, shoulder, elbow, wrist
-        self._phi_dot = [0, 0, 0, 0]  # [rad/s]
-        self._position = [0, 0, 0]  # [m]
-        self._gripper = 0.0  # [0 = open, 1 = closed]
+        self._phi = np.array([0, 0, 0, 0], dtype=np.float64)  # [rad] joint angles for 4 joints in order: base, shoulder, elbow, wrist
+        self._phi_dot = np.array([0, 0, 0, 0], dtype=np.float64)  # [rad/s]
+        self._position = np.array([0, 0, 0], dtype=np.float64)  # [m]
+        self._gripper = np.float64(0.0)  # [0 = open, 1 = closed]
         self._led = np.array([0, 0, 0], dtype=np.float64)  # [R, G, B] values as floats from 0 to 1
 
-    def elapsed_time(self):
+    def elapsed_time(self) -> float:
         return time.time() - self.startTime
 
-    def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None):
+    def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None) -> None:
         # region: Process Inputs:
         phi_cmd = np.asarray(phi_Cmd, dtype=np.float64)
         if phi_cmd.shape != (4,):
@@ -60,7 +60,7 @@ class Arm:
         self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
 
     # Only checks physical limits of the arm
-    def limit_check(self, phi_cmd):
+    def limit_check(self, phi_cmd) -> None:
         #   Phi limits (from QArm documentation):
         #       Base: ± 170 deg
         #       Shoulder: ± 85 deg
@@ -77,7 +77,7 @@ class Arm:
             raise ValueError("Wrist Phi limit reached. Arm moved to home position.")
 
     # Checks if the arm will run into the table
-    def workspace_check(self, phi_cmd):
+    def workspace_check(self, phi_cmd) -> None:
         # TODO: Update workspace limits to real values and test phi_cmd to make sure it won't run into the table
 
         # Base parrallel to table so impossible to run into table with any base angle
@@ -88,7 +88,7 @@ class Arm:
         elif self._phi[3] < -np.radians(160) or self._phi[3] > np.radians(160):
             raise ValueError("Wrist Workspace limit reached. Arm moved to home position.")
 
-    def home(self):
+    def home(self) -> None:
         self._phi = np.array([0, 0, 0, 0], dtype=np.float64)
         self._led = np.array([1, 0, 0], dtype=np.float64)
         self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
@@ -100,21 +100,21 @@ class Arm:
         return self._phi
 
     @property
-    def position(self):
+    def position(self) -> np.ndarray:
         # Update phi to current state of the arm and then calculate position with forward kinematics
         self._position = self.myArmUtilities.forward_kinematics(self.phi)  # this will update self._phi as well
         return self._position
 
     @property
-    def gripper(self):
+    def gripper(self) -> np.float64:
         return self._gripper
 
     @property
-    def led(self):
+    def led(self) -> np.ndarray:
         return self._led
 
     @property
-    def phi_dot(self):
+    def phi_dot(self) -> np.ndarray:
         # Update phi_dot to current state of the arm
         self._phi_dot = np.asarray(self.myArm.measJointSpeed[0:4], dtype=np.float64)
         return self._phi_dot
