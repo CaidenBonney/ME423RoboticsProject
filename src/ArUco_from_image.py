@@ -18,22 +18,22 @@ ARUCO_DICT = cv2.aruco.DICT_4X4_250
 # ==========================
 
 def load_calibration(path):
-    # fs = cv2.FileStorage(path, cv2.FILE_STORAGE_READ)
-    # if not fs.isOpened():
-    #     raise FileNotFoundError("Could not open calibration file")
+    fs = cv2.FileStorage(path, cv2.FILE_STORAGE_READ)
+    if not fs.isOpened():
+        raise FileNotFoundError("Could not open calibration file")
 
-    # camera_matrix = fs.getNode("camera_matrix").mat()
-    camera_matrix = np.array(([800, 0, 320], [0, 800, 240],[0, 0, 1]), dtype=np.float32)
-    dist_coeffs = np.zeros((5, 1), dtype=np.float32)
+    camera_matrix = fs.getNode("camera_matrix").mat()
+    # camera_matrix = np.array(([800, 0, 320], [0, 800, 240],[0, 0, 1]), dtype=np.float32)
+    # dist_coeffs = np.zeros((5, 1), dtype=np.float32)
 
-    # dist_coeffs = fs.getNode("distortion_coefficients").mat()
+    dist_coeffs = fs.getNode("distortion_coefficients").mat()
 
-    # fs.release()
+    fs.release()
 
-    # if camera_matrix is None:
-    #     camera_matrix = fs.getNode("cameraMatrix").mat()
-    # if dist_coeffs is None:
-    #     dist_coeffs = fs.getNode("distCoeffs").mat()
+    if camera_matrix is None:
+        camera_matrix = fs.getNode("cameraMatrix").mat()
+    if dist_coeffs is None:
+        dist_coeffs = fs.getNode("distCoeffs").mat()
 
     return camera_matrix, dist_coeffs
 
