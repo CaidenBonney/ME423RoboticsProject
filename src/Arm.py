@@ -18,7 +18,7 @@ class Arm:
         # print("Sample Rate is ", self.sampleRate, " Hz. Simulation will run until you type Ctrl+C to exit.")
 
         # Internal variables for current state of the arm
-        self._phi = [0, 0, 0, 0]  # [rad]
+        self._phi = [0, 0, 0, 0]  # [rad] joint angles for 4 joints in order: base, shoulder, elbow, wrist
         self._phi_dot = [0, 0, 0, 0]  # [rad/s]
         self._position = [0, 0, 0]  # [m]
         self._gripper = 0.0  # [0 = open, 1 = closed]
@@ -28,44 +28,71 @@ class Arm:
         return time.time() - self.startTime
 
     def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None):
+        start = self.elapsed_time()
         # region: Process Inputs:
-        # Update phi to the commanded values
-        self._phi = np.asarray(phi_Cmd, dtype=np.float64)
-        if phi_Cmd.shape != (4,):
+        phi_cmd = np.asarray(phi_Cmd, dtype=np.float64)
+        if phi_cmd.shape != (4,):
             raise ValueError("phi_Cmd must be an iterable of 4 joint angles [rad].")
+        self._phi = phi_cmd
 
         # Optional gripper command
         if gripper_Cmd is not None:
-            if gripper_Cmd < 0 or gripper_Cmd > 1:
+            gripper_cmd = float(gripper_Cmd)
+            if gripper_cmd < 0 or gripper_cmd > 1:
                 raise ValueError("gripper_Cmd must be a value between 0 and 1.")
-            self._gripper = np.asarray(gripper_Cmd, dtype=np.float64)
+            self._gripper = np.float64(gripper_cmd)
 
         # Optional led command
         if led_Cmd is not None:
-            led_Cmd = np.asarray(led_Cmd, dtype=np.float64)
-            if led_Cmd.shape != (3,):
+            led_cmd = np.asarray(led_Cmd, dtype=np.float64)
+            if led_cmd.shape != (3,):
                 raise ValueError("led_Cmd must be an iterable of 3 values [R, G, B].")
-            self._led = led_Cmd
+            if np.any((led_cmd < 0) | (led_cmd > 1)):
+                raise ValueError("Each led_Cmd value must be between 0 and 1.")
+            self._led = led_cmd
         # endregion
-        
+
         # region: Phi Limit Check
-        if self._phi[0] < -np.pi:
-            self._phi[0] = -np.pi
+        #   Phi limits (from QArm documentation):
+        #       Base: ± 170 deg
+        #       Shoulder: ± 85 deg
+        #       Elbow: -95 deg / +75 deg
+        #       Wrist: ± 160 deg
+
+        # TODO: Note the arm can still run into the table as of now, so we may want to add some
+        # workspace limits in the future as well. For now, we just check joint limits and move
+        # to home position if they are exceeded.
+        if self._phi[0] < -np.radians(170) or self._phi[0] > np.radians(170):
+            self.home()
+            raise ValueError("Phi limit reached. Arm moved to home position.")
+        if self._phi[1] < -np.radians(85) or self._phi[1] > np.radians(85):
+            self.home()
+            raise ValueError("Phi limit reached. Arm moved to home position.")
+        elif self._phi[2] < -np.radians(95) or self._phi[2] > np.radians(75):
+            self.home()
+            raise ValueError("Phi limit reached. Arm moved to home position.")
+        elif self._phi[3] < -np.radians(160) or self._phi[3] > np.radians(160):
+            self.home()
+            raise ValueError("Phi limit reached. Arm moved to home position.")
         # endregion
-        
-        start = self.elapsed_time()
-        
+
         # region: Send Commands to Arm
-        self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
+        try: 
+            while self.myArm.status:
+                self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
+
+                # Pause/sleep to maintain Rate
+                sleep_time = self.sampleTime - (self.elapsed_time() - start) % self.sampleTime
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+        except KeyboardInterrupt:
+            print("User interrupted!")
         # endregion
 
-        # Pause/sleep to maintain Rate
-        sleep_time = self.sampleTime - (self.elapsed_time() - start) % self.sampleTime
-        if sleep_time > 0:
-            time.sleep(sleep_time)
-
-        # Keep state aligned with measured feedback when available.
-        self._phi = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64)
+    def home(self):
+        self._phi = np.array([0, 0, 0, 0], dtype=np.float64)
+        self._led = np.array([1, 0, 0], dtype=np.float64)
+        self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
 
     @property
     def phi(self):
