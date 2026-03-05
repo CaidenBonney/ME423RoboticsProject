@@ -1,6 +1,6 @@
 # Special QArm library imports
-from pal.products.qarm import QArm
-from hal.products.qarm import QArmUtilities
+from pal.products.qarm import QArm  # pyright: ignore[reportMissingImports]
+from hal.products.qarm import QArmUtilities  # pyright: ignore[reportMissingImports]
 
 # Standard library imports
 import time
@@ -28,7 +28,6 @@ class Arm:
         return time.time() - self.startTime
 
     def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None):
-        start = self.elapsed_time()
         # region: Process Inputs:
         phi_cmd = np.asarray(phi_Cmd, dtype=np.float64)
         if phi_cmd.shape != (4,):
@@ -52,42 +51,42 @@ class Arm:
             self._led = led_cmd
         # endregion
 
-        # region: Phi Limit Check
+        # Check limits and workspace before sending command to arm will raise ValueError if checks fail
+        self.limit_check(phi_cmd)
+        self.workspace_check(phi_cmd)
+
+        # Commands arm to move to desired phi_cmd with gripper and LED states.
+        # Note that speed is not specified in this command.
+        self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
+
+    # Only checks physical limits of the arm
+    def limit_check(self, phi_cmd):
         #   Phi limits (from QArm documentation):
         #       Base: ± 170 deg
         #       Shoulder: ± 85 deg
         #       Elbow: -95 deg / +75 deg
         #       Wrist: ± 160 deg
 
-        # TODO: Note the arm can still run into the table as of now, so we may want to add some
-        # workspace limits in the future as well. For now, we just check joint limits and move
-        # to home position if they are exceeded.
         if self._phi[0] < -np.radians(170) or self._phi[0] > np.radians(170):
-            self.home()
-            raise ValueError("Phi limit reached. Arm moved to home position.")
-        if self._phi[1] < -np.radians(85) or self._phi[1] > np.radians(85):
-            self.home()
-            raise ValueError("Phi limit reached. Arm moved to home position.")
+            raise ValueError("Base Phi limit reached. Arm moved to home position.")
+        elif self._phi[1] < -np.radians(85) or self._phi[1] > np.radians(85):
+            raise ValueError("Shoulder Phi limit reached. Arm moved to home position.")
         elif self._phi[2] < -np.radians(95) or self._phi[2] > np.radians(75):
-            self.home()
-            raise ValueError("Phi limit reached. Arm moved to home position.")
+            raise ValueError("Elbow Phi limit reached. Arm moved to home position.")
         elif self._phi[3] < -np.radians(160) or self._phi[3] > np.radians(160):
-            self.home()
-            raise ValueError("Phi limit reached. Arm moved to home position.")
-        # endregion
+            raise ValueError("Wrist Phi limit reached. Arm moved to home position.")
 
-        # region: Send Commands to Arm
-        try: 
-            while self.myArm.status:
-                self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
+    # Checks if the arm will run into the table
+    def workspace_check(self, phi_cmd):
+        # TODO: Update workspace limits to real values and test phi_cmd to make sure it won't run into the table
 
-                # Pause/sleep to maintain Rate
-                sleep_time = self.sampleTime - (self.elapsed_time() - start) % self.sampleTime
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
-        except KeyboardInterrupt:
-            print("User interrupted!")
-        # endregion
+        # Base parrallel to table so impossible to run into table with any base angle
+        if self._phi[1] < -np.radians(85) or self._phi[1] > np.radians(85):
+            raise ValueError("Shoulder Workspace limit reached. Arm moved to home position.")
+        elif self._phi[2] < -np.radians(95) or self._phi[2] > np.radians(75):
+            raise ValueError("Elbow Workspace limit reached. Arm moved to home position.")
+        elif self._phi[3] < -np.radians(160) or self._phi[3] > np.radians(160):
+            raise ValueError("Wrist Workspace limit reached. Arm moved to home position.")
 
     def home(self):
         self._phi = np.array([0, 0, 0, 0], dtype=np.float64)
@@ -96,13 +95,14 @@ class Arm:
 
     @property
     def phi(self):
-        # phi to current state of the arm
+        # Update phi to current state of the arm
         self._phi = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64)
         return self._phi
 
     @property
     def position(self):
-        self._position = self.myArmUtilities.forward_kinematics(self._phi)
+        # Update phi to current state of the arm and then calculate position with forward kinematics
+        self._position = self.myArmUtilities.forward_kinematics(self.phi)  # this will update self._phi as well
         return self._position
 
     @property
@@ -115,6 +115,6 @@ class Arm:
 
     @property
     def phi_dot(self):
-        # update phi_dot to current state of the arm
+        # Update phi_dot to current state of the arm
         self._phi_dot = np.asarray(self.myArm.measJointSpeed[0:4], dtype=np.float64)
         return self._phi_dot
