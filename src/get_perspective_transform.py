@@ -6,7 +6,7 @@ import numpy as np
 # ==========================
 
 CALIBRATION_FILE = "camera_calib.yml"   # <-- path to your calibration YAML
-MARKER_ID = 67
+MARKER_ID = [67, 1, 2, 3, 5, 4, 6]
 MARKER_LENGTH = 0.07  # marker side length in meters (change to yours)
 CAMERA_INDEX = 3
 
@@ -90,12 +90,14 @@ gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 # Detect markers
 detector = cv2.aruco.ArucoDetector(dictionary, detector_params)
 corners, ids, _ = detector.detectMarkers(gray)
+marker_dict = {}
+
 
 if ids is not None:
     ids = ids.flatten()
-
+    print("Detected marker IDs:", ids)
     for i, marker_id in enumerate(ids):
-        if marker_id == MARKER_ID:
+        if marker_id in MARKER_ID:
 
             image_points = corners[i].reshape(4, 2)
             # print(image_points)
@@ -129,50 +131,55 @@ if ids is not None:
                 """
                 # Draw results for visualization
                 cv2.aruco.drawDetectedMarkers(frame, corners, ids)
-                cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, MARKER_LENGTH * 0.75)
+                # cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, MARKER_LENGTH * 0.75)
                 marker_centers.append(image_points.mean(axis=0))  # (u,v) center of the marker in pixel coordinates
+                marker_dict[str(marker_id)] = (image_points.mean(axis=0))#, rvec_cam, tvec_cam)  # store center, rotation, translation for this marker
+                print("marker id: ", marker_id)
                 # print(marker_centers)
-
+            else:
+                print(f"Failed to estimate pose for marker ID {marker_id}")
+                
 x_spots = []
 y_spots = []
 for center in marker_centers:
     marker_center = (int(center[0]), int(center[1]))
     x_spots.append(center[0])
     y_spots.append(center[1])
-    cv2.circle(frame, center=marker_center, radius=50, color=(0, 255, 0), thickness=2)
+    # cv2.circle(frame, center=marker_center, radius=50, color=(0, 255, 0), thickness=2)
 true_centers = (int(np.mean(x_spots)), int(np.mean(y_spots)))
 
 
-cv2.circle(frame, center=true_centers, radius=50, color=(255, 0, 0), thickness=2)
-cv2.imshow("ArUco Pose Estimation", frame)
-cv2.waitKey(0)
+# cv2.circle(frame, center=true_centers, radius=50, color=(255, 0, 0), thickness=2)
+
+# cv2.waitKey(0)
 cap.release()
-cv2.destroyAllWindows()
+# cv2.destroyAllWindows()
+
+print("marker_dict: ", marker_dict)
 
 # calculate destination points for homography (normal view of the marker)
-marker_centers = np.array(marker_centers) 
-hull = cv2.convexHull(marker_centers)
-print("hull ", hull)
-
-# define edges
-edge_1_len = np.linalg.norm(hull[0] - hull[1])
-edge_2_len = np.linalg.norm(hull[1] - hull[2])
-print("edge_1 ", edge_1_len)
-print("edge_2 ", edge_2_len)
-
-if edge_1_len > edge_2_len:
-    sequenced = [hull[0], hull[1], hull[2], hull[3]]
-else:
-    sequenced = [hull[1], hull[2], hull[3], hull[0]]
-
-mat_aspect_ratio = 37/25.5
- # the longest edge should be the height of the marker, so we can calculate the height using the aspect ratio
-
-
+point_1 = np.array(marker_dict["3"])
+point_2 = np.array(marker_dict["5"])
+point_3 = np.array(marker_dict["2"])
+point_4 = np.array(marker_dict["1"])
+origin = np.array(marker_dict["67"])
+print(point_1)
+mat_aspect_ratio = 37/25.5 # the longest edge should be the height of the marker, so we can calculate the height using the aspect ratio
 # calculate destination points for homography (normal view of the marker)
-
+v1 = point_2 - point_1
+v1 = np.append(v1, 0)  # make it 3D by adding a z component
+v2 = np.cross(v1, [0, 0, -1])  # perpendicular vector in the plane
+v2 = v2 / mat_aspect_ratio
+v2 = np.array(v2[:2], dtype=np.float32)  # convert back to 2D and ensure float32 type
+source_points = np.array([point_1, point_2, point_3, point_4], dtype=np.float32).reshape(-1, 1, 2)
+dest_points = np.array([point_1, point_2, point_2 + v2, point_1 + v2], dtype=np.float32).reshape(-1, 1, 2)
+print(v1)
+print(v2)
 # destination points for homography (normal view of the marker), should be calculate to match shape of the true mat
-homography, _ = cv2.findHomography(marker_centers, dest_points)
+homography, _ = cv2.findHomography(source_points, dest_points, method=cv2.RANSAC)
 undistorted = cv2.warpPerspective(frame, homography, (640, 480))
+cv2.polylines(frame, np.array([source_points], dtype=np.int32), True, (0, 255, 255), 3)
+cv2.imshow("ArUco Pose Estimation", frame)
+cv2.polylines(undistorted, np.array([dest_points], dtype=np.int32), True, (0, 255, 255), 3)
 cv2.imshow("Undistorted", undistorted)
 cv2.waitKey(0)
