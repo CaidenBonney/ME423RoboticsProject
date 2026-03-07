@@ -158,11 +158,11 @@ cap.release()
 print("marker_dict: ", marker_dict)
 
 # calculate destination points for homography (normal view of the marker)
-point_1 = np.array(marker_dict["3"])
-point_2 = np.array(marker_dict["5"])
-point_3 = np.array(marker_dict["2"])
-point_4 = np.array(marker_dict["1"])
-origin = np.array(marker_dict["67"])
+point_1 = np.array(marker_dict["3"]) # Bottom left
+point_2 = np.array(marker_dict["5"]) # Top left
+point_3 = np.array(marker_dict["2"]) # Top Right
+point_4 = np.array(marker_dict["1"]) # Bottom Right
+origin = np.array(marker_dict["67"]) 
 print(point_1)
 mat_aspect_ratio = 37/25.5 # the longest edge should be the height of the marker, so we can calculate the height using the aspect ratio
 # calculate destination points for homography (normal view of the marker)
