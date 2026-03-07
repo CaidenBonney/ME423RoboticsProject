@@ -1,5 +1,6 @@
 import time
 import numpy as np
+from numpy.random import randint
 
 
 class Camera:
@@ -24,8 +25,11 @@ class Camera:
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
     def capture_and_process(self) -> tuple[np.ndarray, np.float64, np.ndarray]:
         # TODO: define camera output to phi_cmd mapping. (maybe done in trajectory planning instead?)
-        phi_cmd = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float64)
+
+        tol = 0.2
+
+        phi_cmd = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float64) + np.clip(np.random.randn(4) * 0.1, -tol, tol)
         gripper_cmd = np.float64(0.0)
-        led_cmd = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+        led_cmd = np.array([0.0, 0.0, 0.0], dtype=np.float64) + np.clip(np.random.randn(3) + 0.5, 0, 1)
 
         return phi_cmd, gripper_cmd, led_cmd
