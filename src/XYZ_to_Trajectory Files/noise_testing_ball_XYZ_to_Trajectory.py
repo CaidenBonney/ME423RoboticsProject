@@ -10,7 +10,7 @@ from ball_XYZ_to_Trajectory import update_trajectory
 def main() -> None:
     # === Parameters (same as MATLAB) ===
     dt = 0.033
-    window_size = 20
+    window_size = 40
     noise_level = 0.2
 
     t_list: list[float] = []
@@ -20,9 +20,10 @@ def main() -> None:
     # === Simulate measurements and update model online ===
     for k in range(1, 101):
         tk = k * dt
+        # Input initial velocities/positions here
         x_true = 2 * tk
         y_true = 1.5 * tk
-        z_true = 1 - 4.9 * tk**2
+        z_true = 1 + 10*tk - 4.9 * tk**2
 
         x_messy = x_true + noise_level * np.random.randn()
         y_messy = y_true + noise_level * np.random.randn()
@@ -85,6 +86,23 @@ def main() -> None:
     print(f"z(t) = {pz[0]}*(t-t0)^2 + {pz[1]}*(t-t0) + {pz[2]}")
     print(f"t0 = {t0}")
 
+    # === Calculating intercept time (t_p) and intercept position (p_p) ===
+    t_roots = np.roots(pz) + t0
+    t_p = max(t_roots) + t0
+    print(f"t_p = {t_p}")
+    # Desired z-intercept (z_p)
+    z_p = 0.49
+    # NEED TO FIX T_P (FOR SOME REASON T_0 IS WHAT WE WANT)
+    plt.figure(2)
+
+    plt.plot(t, pos[:, 2], "o", label="Measured")
+    plt.plot(t_model, model_vals[:, 2], linewidth=2, label="Final Model")
+    plt.ylabel("z (m)")
+    plt.xlabel("Time (s)")
+    plt.axhline(y=z_p, color='r', linestyle='-')
+    plt.legend()
+    plt.show()
+    
 
 if __name__ == "__main__":
     main()
