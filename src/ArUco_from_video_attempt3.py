@@ -303,7 +303,7 @@ def main():
             cv2.putText(vis, use_method, (10, 25),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
             cv2.putText(vis, f"Camera in marker67 frame (m): x={x:.3f}, y={y:.3f}, z={z:.3f}",
-                        (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
+                        (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
             # Optional debug prints
             # print("T_marker_from_cam:\n", T_marker_from_cam)
