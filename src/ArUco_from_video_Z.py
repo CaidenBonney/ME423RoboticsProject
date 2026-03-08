@@ -7,7 +7,7 @@ import pyrealsense2 as rs
 # USER SETTINGS
 # ==========================
 
-CALIBRATION_FILE = "camera_calib.yml"   # <-- path to your calibration YAML
+CALIBRATION_FILE = "camera_calib_magic.yml"   # <-- path to your calibration YAML
 MARKER_ID = 67
 MARKER_LENGTH = 0.07  # marker side length in meters (change to yours)
 CAMERA_INDEX = 3
@@ -88,7 +88,7 @@ align = rs.align(align_to)
 
 
 print("Press 'q' to quit.")
-
+j = 0
 while True:
     frames = pipeline.wait_for_frames()
     aligned_frames = align.process(frames)
@@ -98,7 +98,6 @@ while True:
 
     rgb_image = np.asanyarray(rgb_frames.get_data())
     depth_image = np.asarray(depth_frames.get_data(), dtype=np.uint8)
-    depth_data = depth_frames.get_data()
     
 
     if not rgb_frames or not depth_frames:
@@ -109,6 +108,7 @@ while True:
     # Detect markers
     detector = cv2.aruco.ArucoDetector(dictionary, detector_params)
     corners, ids, _ = detector.detectMarkers(gray)
+
 
     if ids is not None:
         ids = ids.flatten()
@@ -142,8 +142,9 @@ while True:
                     # 1) choose pixel and get depth Z (meters)
                     
                     u,v = image_points.mean(axis=0) 
-
-                    Z = depth_data[v,u]  # <-- you must supply this from your depth camera, in meters
+                    u = int(u)
+                    v = int(v)                    
+                    Z = depth_image[v,u]  # <-- you must supply this from your depth camera, in meters
 
                     # 2) back-project to camera coordinates
                     fx, fy = camera_matrix[0,0], camera_matrix[1,1]
@@ -161,8 +162,9 @@ while True:
                     P_marker = R.T @ (P_cam - t)
 
                     x_m, y_m, z_m = P_marker.reshape(3)
-                    print("Point in marker frame (m):", x_m, y_m, z_m)
-                    print("Marker-frame Z (m):", z_m)
+                    if j % 500 == 0:  # Print every 10 frames
+                        print("Point in marker frame (m):", x_m, y_m, z_m)
+                        print("Marker-frame Z (m):", z_m)
 
                     """
                     print("\n=== Marker 67 Detected ===")
@@ -176,6 +178,7 @@ while True:
                     # Draw results for visualization
                     cv2.aruco.drawDetectedMarkers(rgb_image, corners, ids)
                     cv2.drawFrameAxes(rgb_image, camera_matrix, dist_coeffs, rvec, tvec, MARKER_LENGTH * 0.75)
+                    j += 1
 
     cv2.imshow("ArUco Pose Estimation", rgb_image)
 

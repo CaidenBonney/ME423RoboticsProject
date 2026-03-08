@@ -105,7 +105,7 @@ if ids is not None:
             success, rvec, tvec = cv2.solvePnP(
                 object_points,
                 image_points,
-                camera_matrix,
+                camera_matrix,  
                 dist_coeffs,
                 flags=cv2.SOLVEPNP_IPPE_SQUARE
             )
@@ -120,7 +120,7 @@ if ids is not None:
                 T_cam_in_marker[:3, :3] = R_cam
                 T_cam_in_marker[:3, 3] = tvec_cam.reshape(3)
 
-                """
+
                 print("\n=== Marker 67 Detected ===")
                 print("Camera Position in Marker Frame (meters):")
                 print(tvec_cam.reshape(3))
@@ -128,10 +128,10 @@ if ids is not None:
                 print(rvec_cam.reshape(3))
                 print("4x4 Transformation Matrix:")
                 print(T_cam_in_marker)
-                """
+                
                 # Draw results for visualization
                 cv2.aruco.drawDetectedMarkers(frame, corners, ids)
-                # cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, MARKER_LENGTH * 0.75)
+                cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, MARKER_LENGTH * 0.75)
                 marker_centers.append(image_points.mean(axis=0))  # (u,v) center of the marker in pixel coordinates
                 marker_dict[str(marker_id)] = (image_points.mean(axis=0))#, rvec_cam, tvec_cam)  # store center, rotation, translation for this marker
                 print("marker id: ", marker_id)

@@ -76,6 +76,7 @@ detector_params = cv2.aruco.DetectorParameters()
 
 cap = cv2.VideoCapture(CAMERA_INDEX)
 
+j = 0
 print("Press 'q' to quit.")
 
 while True:
@@ -105,7 +106,6 @@ while True:
                     dist_coeffs,
                     flags=cv2.SOLVEPNP_IPPE_SQUARE
                 )
-
                 if success:
                     # Invert to get camera pose w.r.t marker
                     rvec_cam, tvec_cam = invert_pose(rvec, tvec)
@@ -116,18 +116,19 @@ while True:
                     T_cam_in_marker[:3, :3] = R_cam
                     T_cam_in_marker[:3, 3] = tvec_cam.reshape(3)
 
-                    """
-                    print("\n=== Marker 67 Detected ===")
-                    print("Camera Position in Marker Frame (meters):")
-                    print(tvec_cam.reshape(3))
-                    print("Camera Rotation Vector (Rodrigues, radians):")
-                    print(rvec_cam.reshape(3))
-                    print("4x4 Transformation Matrix:")
-                    print(T_cam_in_marker)
-                    """
+                    if j % 100 == 0:  # Print every 10 frames
+                        print("\n=== Marker 67 Detected ===")
+                        print("Camera Position in Marker Frame (meters):")
+                        print(tvec_cam.reshape(3))
+                        print("Camera Rotation Vector (Rodrigues, radians):")
+                        print(rvec_cam.reshape(3))
+                        print("4x4 Transformation Matrix:")
+                        print(T_cam_in_marker)
+    
                     # Draw results for visualization
                     cv2.aruco.drawDetectedMarkers(frame, corners, ids)
                     cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, MARKER_LENGTH * 0.75)
+                    j += 1
 
     cv2.imshow("ArUco Pose Estimation", frame)
 

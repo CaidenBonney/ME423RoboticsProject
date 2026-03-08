@@ -44,10 +44,10 @@ try:
     # cv2.VideoWriter(filename, fourcc, fps, frame_size, isColor)
     # Define the codec and create VideoWriter object
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    depth_video_writer = cv2.VideoWriter("src/videos/depth_video_arc.mp4", fourcc, 60, (640, 480), False)
-    raw_video_writer = cv2.VideoWriter("src/videos/rgb_video_arc.mp4", fourcc, 60, (640, 480), True)
-    annotated_video_writer = cv2.VideoWriter("src/videos/annotated_video_arc.mp4", fourcc, 60, (640, 480), True)
-    canny_video_writer = cv2.VideoWriter("src/videos/canny_video_arc.mp4", fourcc, 60, (640, 480), False)
+    depth_video_writer = cv2.VideoWriter("src/videos/depth_video_3_7.mp4", fourcc, 60, (640, 480), False)
+    raw_video_writer = cv2.VideoWriter("src/videos/rgb_video_3_7.mp4", fourcc, 60, (640, 480), True)
+    annotated_video_writer = cv2.VideoWriter("src/videos/annotated_video_3_7.mp4", fourcc, 60, (640, 480), True)
+    canny_video_writer = cv2.VideoWriter("src/videos/canny_video_3_7.mp4", fourcc, 60, (640, 480), False)
     # Create a context object. This object owns the handles to all connected realsense devices
     rgb_pipeline = rs.pipeline()
     depth_pipeline = rs.pipeline()
