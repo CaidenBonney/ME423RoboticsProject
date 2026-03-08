@@ -32,9 +32,9 @@ def camera_loop(cam: Camera, cmd_queue: queue.Queue, stop_event: threading.Event
 def arm_loop(arm: Arm, cmd_queue: queue.Queue, stop_event: threading.Event) -> None:
     # initialize latest command to be sent to arm to home position with no gripper or LED activation
     latest_cmd = (
-        np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float64),
+        np.array([-0.45, 0.0, -0.49], dtype=np.float64),
         np.float64(0.0),
-        np.array([0.0, 0.0, 0.0], dtype=np.float64),
+        np.array([0.0, 1.0, 0.0], dtype=np.float64),
     )
 
     start = arm.elapsed_time()
@@ -46,8 +46,10 @@ def arm_loop(arm: Arm, cmd_queue: queue.Queue, stop_event: threading.Event) -> N
             pass
 
         # send latest command to arm
-        phi_cmd, gripper_cmd, led_cmd = latest_cmd
+        XYZ, gripper_cmd, led_cmd = latest_cmd
+        
         try:
+            phi_cmd, _, _ = arm.XYZ_to_phi_cmd(XYZ)
             arm.move(phi_Cmd=phi_cmd, gripper_Cmd=gripper_cmd, led_Cmd=led_cmd)
         except ValueError as e:
             print(f"Command error: {e}")

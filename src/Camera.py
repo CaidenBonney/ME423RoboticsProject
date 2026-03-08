@@ -1,3 +1,4 @@
+from re import L
 import time
 from typing import Optional
 import numpy as np
@@ -31,22 +32,17 @@ class Camera:
         # TODO: convert image to XYZ
         pass
 
-    def XYZ_to_phi_cmd(
-        self, XYZ: np.ndarray
-    ) -> tuple[Optional[np.ndarray], Optional[np.float64], Optional[np.ndarray]]:
-
-        X, Y, Z = XYZ[0], XYZ[1], XYZ[2]
-
-        
-        
-        phi_cmd = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float64)
-        gripper_cmd = np.float64(0.0)
-        led_cmd = None
-
-        return phi_cmd, gripper_cmd, led_cmd
-
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
     def capture_and_process(self) -> tuple[Optional[np.ndarray], Optional[np.float64], Optional[np.ndarray]]:
         input = self.capture_image()
-        XYZ = self.image_processing(input)
-        return self.XYZ_to_phi_cmd(XYZ)
+        # XYZ = self.image_processing(input)
+        
+        XYZ = np.random.uniform(
+            low=np.array([-0.50, -0.10, -0.55], dtype=np.float64),
+            high=np.array([-0.40, 0.10, -0.45], dtype=np.float64),
+        )
+        
+        gripper_Cmd = None
+        led_Cmd = np.array([1.0, 0.0, 1.0], dtype=np.float64)
+        
+        return XYZ, gripper_Cmd, led_Cmd
