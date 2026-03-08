@@ -33,7 +33,7 @@ def arm_loop(arm: Arm, cmd_queue: queue.Queue, stop_event: threading.Event) -> N
     # initialize latest command to be sent to arm to home position with no gripper or LED activation
     latest_cmd = (
         np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float64),
-        0.0,
+        np.float64(0.0),
         np.array([0.0, 0.0, 0.0], dtype=np.float64),
     )
 
