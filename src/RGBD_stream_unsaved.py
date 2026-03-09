@@ -103,6 +103,9 @@ try:
     start_time = time.time()
 
     last_pts = []
+
+    intrinsics = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
+    print("Camera intrinsics:", intrinsics)
     while True:
         # This call waits until a new coherent set of frames is available on a device
         # Calls to get_frame_data(...) and get_frame_timestamp(...) on a device will return stable values until wait_for_frames(...) is called
@@ -221,26 +224,28 @@ try:
                         hull=hull,
                         bbox=(x, y, w, h),
                     )
-
             out = frame.copy()
-
             if best is not None:
-                cx, cy = best["cx"], best["cy"]
-                last_pts.append((cx, cy))
+                cx_pix, cy_pix = best["cx"], best["cy"]
+                depth_meters = depth.get_distance(int(cx_pix), int(cy_pix))
+                real_point = rs.rs2_deproject_pixel_to_point(intrinsics, [cx_pix, cy_pix], depth_meters)
+                print("Deprojected point (meters):", real_point)
+                last_pts.append((cx_pix, cy_pix))
                 if len(last_pts) > 10:
                     last_pts = last_pts[-10:]
 
                 # draw hull + center
                 cv2.drawContours(out, [best["hull"]], -1, (0, 255, 0), 2)
-                cv2.circle(out, (int(cx), int(cy)), 4, (255, 0, 0), -1)
+                cv2.circle(out, (int(cx_pix), int(cy_pix)), 4, (255, 0, 0), -1)
 
                 x, y, w, h = best["bbox"]
                 cv2.rectangle(out, (x, y), (x + w, y + h), (0, 255, 255), 2)
-
                 cv2.putText(out, f"area={int(best['area'])}", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
                 cv2.putText(out, f"circ={best['circularity']:.2f} sol={best['solidity']:.2f} asp={best['aspect']:.2f}",
                             (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(out, f"x={best['circularity']:.2f} y={best['solidity']:.2f} z={best['aspect']:.2f}",
+                            (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
             #     records.append((frame_idx, cx, cy, best["area"], best["circularity"], best["solidity"], best["aspect"]))
             # else:
@@ -252,11 +257,10 @@ try:
             cap.release()
             writer.release()
 
-
             # display rgb and depth frames
             cv2.imshow('rgb_cam', out)
             cv2.imshow('depth_cam', depth_map)
-        print(f"FRAME {frames_count} CAPTURED...{rgb_timestamp - start_time}")
+        # print(f"FRAME {frames_count} CAPTURED...{rgb_timestamp - start_time}")
         if cv2.waitKey(1) == ord('q'):
             break
     exit(0)
