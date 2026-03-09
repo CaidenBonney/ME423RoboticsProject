@@ -46,13 +46,18 @@ def main() -> None:
     if traj is None:
         raise RuntimeError("Trajectory was never estimated (not enough samples).")
 
-    # === Plot measured samples and final fitted model ===
     t = np.array(t_list, dtype=float)
     pos = np.array(pos_list, dtype=float)
 
     t_model = np.linspace(t[0], t[-1] + 0.3, 200)
     model_vals = traj.pos(t_model).T  # (N,3)
 
+    px = np.round(traj.px.astype(float), 4)
+    py = np.round(traj.py.astype(float), 4)
+    pz = np.round(traj.pz.astype(float), 4)
+
+    # === Plot measured samples and final fitted model ===
+    '''
     fig, axes = plt.subplots(3, 1, sharex=True)
     axes[0].plot(t, pos[:, 0], "o", label="Measured")
     axes[0].plot(t_model, model_vals[:, 0], linewidth=2, label="Final Model")
@@ -73,28 +78,37 @@ def main() -> None:
     fig.suptitle("Ball XYZ measurements and fitted trajectory")
     plt.tight_layout()
     plt.show()
+    '''
 
     # === Print polynomial equations (rounded like MATLAB) ===
-    px = np.round(traj.px.astype(float), 4)
-    py = np.round(traj.py.astype(float), 4)
-    pz = np.round(traj.pz.astype(float), 4)
-    t0 = traj.t0
-
+    '''
     print(f"Polynomial equations for the trajectory at t = {t[-1]:.6f}:")
     print(f"x(t) = {px[0]}*(t-t0) + {px[1]}")
     print(f"y(t) = {py[0]}*(t-t0) + {py[1]}")
     print(f"z(t) = {pz[0]}*(t-t0)^2 + {pz[1]}*(t-t0) + {pz[2]}")
     print(f"t0 = {t0}")
+    '''
 
     # === Calculating intercept time (t_p) and intercept position (p_p) ===
-    t_roots = np.roots(pz) + t0
-    t_p = max(t_roots) + t0
-    print(f"t_p = {t_p}")
-    # Desired z-intercept (z_p)
+    # Coefficients to solve z(t) = z_p
     z_p = 0.49
-    # NEED TO FIX T_P (FOR SOME REASON T_0 IS WHAT WE WANT)
-    plt.figure(2)
+    coeffs = np.array([pz[0], pz[1], pz[2] - z_p])
+    t_offsets = np.roots(coeffs)
 
+    # Pick the intercept time
+    t0 = traj.t0
+    t_p = t0 + max(t_offsets)
+    
+    p_p = traj.pos(np.array([t_p]))[:, 0]
+
+    x_p, y_p, z_p_actual = p_p
+
+    print(f"Predicted intercept position at t_p = {t_p:.4f}s:")
+    print(f"x = {x_p:.4f}, y = {y_p:.4f}, z = {z_p_actual:.4f}")
+
+    # === Verification plot of z_p ===
+    '''
+    plt.figure(2)
     plt.plot(t, pos[:, 2], "o", label="Measured")
     plt.plot(t_model, model_vals[:, 2], linewidth=2, label="Final Model")
     plt.ylabel("z (m)")
@@ -102,6 +116,7 @@ def main() -> None:
     plt.axhline(y=z_p, color='r', linestyle='-')
     plt.legend()
     plt.show()
+    '''
     
 
 if __name__ == "__main__":
