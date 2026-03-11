@@ -6,6 +6,7 @@ import numpy as np
 from numpy.random import randint
 import cv2
 import pyrealsense2 as rs
+import math
 
 class Camera:
     def __init__(self) -> None:
@@ -21,6 +22,8 @@ class Camera:
         self.cameraPortID = 3 # This number may be different for every machine. It corresponds to the port that the camera is attached to
         self.camera_matrix = None
         self.dist_coeffs = None
+        self.R_m_c = None
+        self.t_m_c = None
         self.cam_setup()
 
     def elapsed_time(self) -> float:
@@ -56,98 +59,60 @@ class Camera:
         print("ROBOT TRANSFORMATION SOLVED...")
 
     def get_robot_transformation(self) -> np.ndarray:
+        MARKER_ID = 67
+        MARKER_LENGTH_M = 0.07
+        ARUCO_DICT = cv2.aruco.DICT_4X4_250
+
+        W, H, FPS = 640, 480, 30
+
+        NEIGHBOR_RADIUS_PX = 2     # depth sampling neighborhood for marker corners
+        BALL_DEPTH_RADIUS_PX = 2   # depth sampling neighborhood for ball center
+        MIN_VALID_CORNERS = 3
+
+        # Ball detector thresholds (tune if needed)
+        S_HIGH = 70
+        V_LOW = 185
+        AREA_MIN = 80
+        AREA_MAX = 12000
+        CIRC_MIN = 0.25
+        SOLID_MIN = 0.40
+        ASPECT_MAX = 1.8
+
+        WARMUP_FRAMES = 30
         frames = self.pipeline.wait_for_frames()
         aligned_frames = self.align.process(frames)
-
-        rgb_frames = aligned_frames.get_color_frame()
-        depth_frames = aligned_frames.get_depth_frame()
-        # PROGRAM FAILS TO MAKE IT PAST THIS POINT, LIKELY DUE TO SOME ISSUE WITH THE REALSENSE PIPELINE OR ALIGNMENT. NEED TO DEBUG.
-
-        aligned_frames = self.capture_image()
-        rgb = aligned_frames.get_color_frame()
+        color = aligned_frames.get_color_frame()
         depth = aligned_frames.get_depth_frame()
-        frame = np.asanyarray(rgb.get_data())
-        CALIBRATION_FILE = "camera_calib.yml"   # <-- path to your calibration YAML
-        # MARKER_ID = [67, 1, 2, 3, 5, 4, 6]
-        MARKER_ID = 67  
-        MARKER_LENGTH = 0.07  # marker side length in meters (change to yours)
-        CAMERA_INDEX = self.cameraPortID
-        ARUCO_DICT = cv2.aruco.DICT_4X4_250
-        # ==========================
-        # Create 3D Marker Points
-        # ==========================
-        def create_marker_object_points(marker_length):
-            L = marker_length
-            return np.array([
-                [-L/2,  L/2, 0],
-                [ L/2,  L/2, 0],
-                [ L/2, -L/2, 0],
-                [-L/2, -L/2, 0]
-            ], dtype=np.float32)
-        # ==========================
-        # Invert Pose (Marker->Camera  →  Camera->Marker)
-        # ==========================
-        def invert_pose(rvec, tvec):
-            R, _ = cv2.Rodrigues(rvec)
-            R_inv = R.T
-            t_inv = -R_inv @ tvec
-            rvec_inv, _ = cv2.Rodrigues(R_inv)
-            return rvec_inv, t_inv
-        object_points = create_marker_object_points(MARKER_LENGTH)
+        frame = np.asanyarray(color.get_data())
+        vis = frame.copy()
+        K = np.array([[self.intrinsics.fx, 0,   self.intrinsics.ppx],
+                [0, self.intrinsics.fy, self.intrinsics.ppy],
+                [0, 0, 1]], dtype=np.float64)
+        dist = np.zeros((5, 1), dtype=np.float64)
+
         dictionary = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
-        detector_params = cv2.aruco.DetectorParameters()
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # Detect markers
-        detector = cv2.aruco.ArucoDetector(dictionary, detector_params)
-        corners, ids, _ = detector.detectMarkers(gray)
+        params = cv2.aruco.DetectorParameters()
+        obj_pts_marker = create_marker_object_points(MARKER_LENGTH_M)
+
+        # 1) camera -> marker transform (R,t)
+        ok_pose, R_m_c, t_m_c, method, all_corners, ids = get_camera_to_marker_transform(
+            frame, depth, self.intrinsics, K, dist, dictionary, params, obj_pts_marker
+        )
+
         if ids is not None:
-            ids = ids.flatten()
-            print("Detected marker IDs:", ids)
-            for i, marker_id in enumerate(ids):
-                if marker_id == MARKER_ID:
-                    image_points = corners[i].reshape(4, 2)
-                    # print(image_points)
-                    # Estimate marker pose w.r.t camera
-                    success, rvec, tvec = cv2.solvePnP(
-                        object_points,
-                        image_points,
-                        self.camera_matrix,  
-                        self.dist_coeffs,
-                        flags=cv2.SOLVEPNP_IPPE_SQUARE
-                    )
-                    if success:
-                        marker_center = image_points.mean(axis=0)  # (u,v) center of the marker in pixel coordinates
-                        # print("marker id: ", marker_id)
-                        # print(marker_centers)
-                        depth_meters = depth.get_distance(int(marker_center[0]), int(marker_center[1]))
-                        real_point = rs.rs2_deproject_pixel_to_point(self.intrinsics, marker_center, depth_meters)
-                        real_point = [-1*coord for coord in real_point]
-                        # Invert to get camera pose w.r.t marker
-                        rvec_cam, tvec_cam = invert_pose(rvec, tvec)
-                        tvec_cam = np.asanyarray(tvec_cam).reshape(3,1)  # ensure tvec_cam is a 1D array of shape (3,)
-                        R_cam, _ = cv2.Rodrigues(rvec_cam)
-                        T_cam_in_marker = np.eye(4)
-                        T_cam_in_marker[:3, :3] = R_cam
-                        T_cam_in_marker[:3, 3] = tvec_cam.reshape(3)
-                        T_marker_in_cam = np.eye(4)
-                        R_marker_in_cam = np.linalg.inv(R_cam)
-                        T_marker_in_cam[:3, :3] = R_marker_in_cam
-                        T_marker_in_cam[:3, 3] = np.asanyarray(real_point).reshape(3,1)
-                        T_cam_in_marker = np.linalg.inv(T_marker_in_cam)
-                        # Draw results for visualization
-                        # cv2.aruco.drawDetectedMarkers(frame, corners, ids)
-                        # cv2.drawFrameAxes(frame, self.camera_matrix, self.dist_coeffs, rvec, tvec, MARKER_LENGTH * 0.75)
-                        # print("\n=== Marker 67 Detected ===")
-                        # print("Camera Position in Marker Frame (meters):")
-                        # print(tvec_cam.reshape(3))
-                        # print("Camera Rotation Vector (Rodrigues, radians):")
-                        # print(rvec_cam.reshape(3))
-                        # print("4x4 Transformation Matrix:")
-                        # print(T_cam_in_marker)
-                        return T_cam_in_marker
-                    else:
-                        print(f"Failed to estimate pose for marker ID {marker_id}")
-                        return np.eye(4)  # return identity if pose estimation fails
+            cv2.aruco.drawDetectedMarkers(vis, all_corners, ids)
+
+        if ok_pose:
+            # Draw axes (need marker->camera pose; invert back for drawing)
+            # marker->camera: R_c_m = R_m_c^T, t_c_m = -R_c_m * t_m_c
+            R_c_m = R_m_c.T
+            t_c_m = -R_c_m @ t_m_c
+            rvec_draw, _ = cv2.Rodrigues(R_c_m)
+            tvec_draw = t_c_m.reshape(3, 1)
+            # cv2.drawFrameAxes(vis, K, dist, rvec_draw, tvec_draw, MARKER_LENGTH_M * 0.75)
+            self.R_m_c = R_m_c
+            self.t_m_c = t_m_c
+        self.robotTransformation = build_T(R_m_c, t_m_c)
         pass
 
     def create_background_model(self, warm_up_video_path: str = "src/videos/warmup_video.mp4", warmup_frames: int = 30, fps: int = 60, W: int = 640, H: int = 480) -> None:
@@ -181,7 +146,7 @@ class Camera:
                 writer.write(frame)
                 warmup_frames_count += 1
         writer.release()
-        cap.release
+        cap.release()
         # Background subtractor to remove static bright objects (like the screw)
         self.bs = cv2.createBackgroundSubtractorMOG2(
             history=500, varThreshold=25, detectShadows=False
@@ -201,12 +166,30 @@ class Camera:
         depth = aligned_frames.get_depth_frame()
         depth_data = depth.get_data()
         depth_image = np.asarray(depth.get_data(), dtype=np.uint8)
-        # depth_map = cv2.applyColorMap(depth_image, cv2.COLORMAP_JET)
+        frame = rgb.get_data()
+        frame = np.asanyarray(frame)
+        vis = frame.copy()
+        last_pts = []
+                # 2) ball detection
+        found_ball, ball_info, dbg = detect_ball_center(frame, self.bs, last_pts)
+        if found_ball:
+            u, v, best = ball_info
+            cv2.circle(vis, (u, v), 5, (255, 0, 0), -1)
+            cv2.drawContours(vis, [best["hull"]], -1, (0, 255, 0), 2)
+            # depth -> 3D in camera frame
+            z = robust_depth_at_pixel(depth, u, v, BALL_DEPTH_RADIUS_PX)
+            if z > 0:
+                P_ball_cam = deproject(u, v, z, self.intrinsics)  # meters
+                # Transform to marker frame: P_marker = R_m_c * P_cam + t_m_c
+                P_ball_marker = (self.R_m_c @ P_ball_cam) + self.t_m_c
+                xM, yM, zM = P_ball_marker.tolist()
+
         pass
     
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
     def capture_and_process(self) -> tuple[Optional[np.ndarray], Optional[np.float64], Optional[np.ndarray]]:
         input = self.capture_image()
+
         # XYZ = self.image_processing(input)
         
         XYZ = np.random.uniform(
@@ -218,3 +201,250 @@ class Camera:
         led_Cmd = np.array([1.0, 0.0, 1.0], dtype=np.float64)
         
         return XYZ, gripper_Cmd, led_Cmd
+
+# ---------------- USER CONFIG ----------------
+MARKER_ID = 67
+MARKER_LENGTH_M = 0.07
+ARUCO_DICT = cv2.aruco.DICT_4X4_250
+
+W, H, FPS = 640, 480, 30
+
+NEIGHBOR_RADIUS_PX = 2     # depth sampling neighborhood for marker corners
+BALL_DEPTH_RADIUS_PX = 2   # depth sampling neighborhood for ball center
+MIN_VALID_CORNERS = 3
+
+# Ball detector thresholds (tune if needed)
+S_HIGH = 70
+V_LOW = 185
+AREA_MIN = 80
+AREA_MAX = 12000
+CIRC_MIN = 0.25
+SOLID_MIN = 0.40                                                                                             
+ASPECT_MAX = 1.8
+
+WARMUP_FRAMES = 30
+
+# ---------------- MARKER MODEL ----------------
+def create_marker_object_points(marker_length_m: float) -> np.ndarray:
+    L = marker_length_m
+    return np.array(
+        [
+            [-L / 2,  L / 2, 0],
+            [ L / 2,  L / 2, 0],
+            [ L / 2, -L / 2, 0],
+            [-L / 2, -L / 2, 0],
+        ],
+        dtype=np.float64
+    )
+
+
+# ---------------- UTILS ----------------
+def robust_depth_at_pixel(depth_frame, u: int, v: int, radius: int) -> float:
+    if radius <= 0:
+        return float(depth_frame.get_distance(u, v))
+    vals = []
+    for dv in range(-radius, radius + 1):
+        for du in range(-radius, radius + 1):
+            uu, vv = u + du, v + dv
+            z = float(depth_frame.get_distance(uu, vv))
+            if z > 0:
+                vals.append(z)
+    if not vals:
+        return 0.0
+    return float(np.median(vals))
+
+def deproject(u: int, v: int, depth_m: float, intr: rs.intrinsics) -> np.ndarray:
+    p = rs.rs2_deproject_pixel_to_point(intr, [float(u), float(v)], float(depth_m))
+    return np.array(p, dtype=np.float64)  # [X,Y,Z] meters in camera frame
+
+def build_T(R: np.ndarray, t: np.ndarray) -> np.ndarray:
+    T = np.eye(4, dtype=np.float64)
+    T[:3, :3] = R
+    T[:3, 3] = t.reshape(3,)
+    return T
+
+def kabsch_rigid_transform(A: np.ndarray, B: np.ndarray):
+    # B ≈ R*A + t
+    if A.shape[0] < 3:
+        return None, None
+    centroid_A = A.mean(axis=0)
+    centroid_B = B.mean(axis=0)
+    AA = A - centroid_A
+    BB = B - centroid_B
+    Hm = AA.T @ BB
+    U, S, Vt = np.linalg.svd(Hm)
+    R = Vt.T @ U.T
+    if np.linalg.det(R) < 0:
+        Vt[-1, :] *= -1
+        R = Vt.T @ U.T
+    t = centroid_B - R @ centroid_A
+    return R, t
+
+def detect_marker_corners(frame_bgr: np.ndarray, marker_id: int, dictionary, params):
+    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    detector = cv2.aruco.ArucoDetector(dictionary, params)
+    all_corners, ids, _ = detector.detectMarkers(gray)
+
+    if ids is None:
+        return False, None, all_corners, ids
+
+    ids_flat = ids.flatten()
+    for i, mid in enumerate(ids_flat):
+        if int(mid) == int(marker_id):
+            corners_uv = all_corners[i].reshape(4, 2).astype(np.float64)
+            return True, corners_uv, all_corners, ids
+
+    return False, None, all_corners, ids
+
+def estimate_translation_from_depth_corners(R_cam_from_marker: np.ndarray,
+                                            corners_uv: np.ndarray,
+                                            obj_pts_marker: np.ndarray,
+                                            depth_frame,
+                                            intr: rs.intrinsics,
+                                            radius_px: int) -> np.ndarray | None:
+    t_list = []
+    for (u, v), P_obj in zip(corners_uv, obj_pts_marker):
+        ui, vi = int(round(u)), int(round(v))
+        z = robust_depth_at_pixel(depth_frame, ui, vi, radius_px)
+        if z <= 0:
+            continue
+        P_cam = deproject(ui, vi, z, intr)
+        t_i = P_cam - (R_cam_from_marker @ P_obj)
+        t_list.append(t_i)
+
+    if len(t_list) < MIN_VALID_CORNERS:
+        return None
+
+    t_stack = np.vstack(t_list)
+    return np.median(t_stack, axis=0)
+
+def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist,
+                                  dictionary, params, obj_pts_marker):
+    """
+    Returns (ok, R_marker_from_cam, t_marker_from_cam, debug_method_string, corners, ids)
+    """
+    found, corners_uv, all_corners, ids = detect_marker_corners(frame_bgr, MARKER_ID, dictionary, params)
+    if not found:
+        return False, None, None, "Marker not found", all_corners, ids
+
+    # gather 3D corner points from depth
+    P_cam_list = []
+    P_obj_list = []
+    for (u, v), P_obj in zip(corners_uv, obj_pts_marker):
+        ui, vi = int(round(u)), int(round(v))
+        z = robust_depth_at_pixel(depth_frame, ui, vi, NEIGHBOR_RADIUS_PX)
+        if z <= 0:
+            continue
+        P_cam_list.append(deproject(ui, vi, z, intr))
+        P_obj_list.append(P_obj)
+
+    P_cam_arr = np.array(P_cam_list, dtype=np.float64)
+    P_obj_arr = np.array(P_obj_list, dtype=np.float64)
+    if P_cam_arr.shape[0] < MIN_VALID_CORNERS:
+        return False, None, None, "Not enough valid depth corners", all_corners, ids
+
+    # A) Hybrid: rotation from PnP, translation from depth corners
+    ok_pnp, rvec, _tvec = cv2.solvePnP(
+        obj_pts_marker.astype(np.float32),
+        corners_uv.astype(np.float32),
+        K,
+        dist,
+        flags=cv2.SOLVEPNP_IPPE_SQUARE
+    )
+
+    if ok_pnp:
+        R_cam_from_marker, _ = cv2.Rodrigues(rvec)
+        t_cam_from_marker = estimate_translation_from_depth_corners(
+            R_cam_from_marker, corners_uv, obj_pts_marker, depth_frame, intr, NEIGHBOR_RADIUS_PX
+        )
+        if t_cam_from_marker is not None:
+            R = R_cam_from_marker
+            t = t_cam_from_marker
+            method = "Hybrid (R from PnP, t from depth)"
+        else:
+            R, t, method = None, None, ""
+    else:
+        R, t, method = None, None, ""
+
+    # B) Fallback: full pose from 3D-3D (Kabsch)
+    if R is None:
+        R, t = kabsch_rigid_transform(P_obj_arr, P_cam_arr)
+        if R is None:
+            return False, None, None, "Pose failed", all_corners, ids
+        method = "Kabsch (pose from depth corners)"
+
+    # marker->camera: P_cam = R*P_marker + t
+    # camera->marker:
+    R_marker_from_cam = R.T
+    t_marker_from_cam = -R_marker_from_cam @ t
+    return True, R_marker_from_cam, t_marker_from_cam, method, all_corners, ids
+
+
+def detect_ball_center(frame_bgr, bs, last_pts):
+    """Returns (found, (u,v), debug_info) using your white+motion style filter."""
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+
+    white = cv2.inRange(hsv, (0, 0, V_LOW), (179, S_HIGH, 255))
+    k5 = np.ones((5, 5), np.uint8)
+    k3 = np.ones((3, 3), np.uint8)
+    white = cv2.morphologyEx(white, cv2.MORPH_OPEN, k5, iterations=1)
+    white = cv2.morphologyEx(white, cv2.MORPH_CLOSE, k5, iterations=2)
+
+    fg = bs.apply(frame_bgr, learningRate=0.002)
+    fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, k3, iterations=1)
+    fg = cv2.dilate(fg, k5, iterations=1)
+
+    mask = cv2.bitwise_and(white, fg)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    pred = None
+    if len(last_pts) >= 2:
+        (x1, y1), (x2, y2) = last_pts[-2], last_pts[-1]
+        pred = (x2 + (x2 - x1), y2 + (y2 - y1))
+    elif len(last_pts) == 1:
+        pred = last_pts[-1]
+
+    best = None
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area < AREA_MIN or area > AREA_MAX:
+            continue
+
+        peri = cv2.arcLength(c, True)
+        if peri <= 0:
+            continue
+        circ = 4 * math.pi * area / (peri * peri)
+
+        hull = cv2.convexHull(c)
+        hull_area = cv2.contourArea(hull)
+        solid = (area / hull_area) if hull_area > 0 else 0.0
+
+        x, y, w, h = cv2.boundingRect(c)
+        aspect = max(w / max(1, h), h / max(1, w))
+
+        if circ < CIRC_MIN or solid < SOLID_MIN or aspect > ASPECT_MAX:
+            continue
+
+        M = cv2.moments(c)
+        if M["m00"] == 0:
+            continue
+        cx = M["m10"] / M["m00"]
+        cy = M["m01"] / M["m00"]
+
+        dist_pred = 0.0
+        if pred is not None:
+            dist_pred = math.hypot(cx - pred[0], cy - pred[1])
+
+        score = (-2.0 * dist_pred) + (0.25 * area) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
+
+        if best is None or score > best["score"]:
+            best = dict(score=score, cx=cx, cy=cy, hull=hull, bbox=(x, y, w, h))
+
+    if best is None:
+        return False, None, dict(mask=mask)
+
+    u, v = int(round(best["cx"])), int(round(best["cy"]))
+    last_pts.append((best["cx"], best["cy"]))
+    if len(last_pts) > 10:
+        last_pts[:] = last_pts[-10:]
+    return True, (u, v, best), dict(mask=mask)
