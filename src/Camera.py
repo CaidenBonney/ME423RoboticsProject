@@ -52,11 +52,12 @@ class Camera:
     def cam_calibration(self, path: str = "camera_calib.yml") -> None:
         self.camera_matrix = np.array(([800, 0, 320], [0, 800, 240],[0, 0, 1]), dtype=np.float32)
         self.dist_coeffs = np.zeros((5, 1), dtype=np.float32)
-        self.create_background_model()
-        print("BACKGROUND MODEL CREATED...")
         print("SOLVING ROBOT TRANSFORMATION...")
         self.get_robot_transformation()
         print("ROBOT TRANSFORMATION SOLVED...")
+        self.create_background_model()
+        print("BACKGROUND MODEL CREATED...")
+
 
     def get_robot_transformation(self) -> np.ndarray:
         MARKER_ID = 67
@@ -69,16 +70,6 @@ class Camera:
         BALL_DEPTH_RADIUS_PX = 2   # depth sampling neighborhood for ball center
         MIN_VALID_CORNERS = 3
 
-        # Ball detector thresholds (tune if needed)
-        S_HIGH = 70
-        V_LOW = 185
-        AREA_MIN = 80
-        AREA_MAX = 12000
-        CIRC_MIN = 0.25
-        SOLID_MIN = 0.40
-        ASPECT_MAX = 1.8
-
-        WARMUP_FRAMES = 30
         frames = self.pipeline.wait_for_frames()
         aligned_frames = self.align.process(frames)
         color = aligned_frames.get_color_frame()
@@ -103,17 +94,22 @@ class Camera:
             cv2.aruco.drawDetectedMarkers(vis, all_corners, ids)
 
         if ok_pose:
+            print("Camera to marker pose found")
             # Draw axes (need marker->camera pose; invert back for drawing)
             # marker->camera: R_c_m = R_m_c^T, t_c_m = -R_c_m * t_m_c
             R_c_m = R_m_c.T
             t_c_m = -R_c_m @ t_m_c
-            rvec_draw, _ = cv2.Rodrigues(R_c_m)
-            tvec_draw = t_c_m.reshape(3, 1)
+            # rvec_draw, _ = cv2.Rodrigues(R_c_m)
+            # tvec_draw = t_c_m.reshape(3, 1)
             # cv2.drawFrameAxes(vis, K, dist, rvec_draw, tvec_draw, MARKER_LENGTH_M * 0.75)
             self.R_m_c = R_m_c
             self.t_m_c = t_m_c
-        self.robotTransformation = build_T(R_m_c, t_m_c)
-        pass
+            self.robotTransformation = build_T(R_m_c, t_m_c)
+        else:
+            print("Camera to marker pose NOT found, using identity")
+            self.R_m_c = np.eye(3, dtype=np.float64)
+            self.t_m_c = np.zeros((3,), dtype=np.float64)
+            self.robotTransformation = np.eye(4, dtype=np.float64)
 
     def create_background_model(self, warm_up_video_path: str = "src/videos/warmup_video.mp4", warmup_frames: int = 30, fps: int = 60, W: int = 640, H: int = 480) -> None:
         # TODO: add camera calibration logic (make rerunable).
