@@ -139,7 +139,7 @@ class Arm:
             raise ValueError("phi_Cmd must be an iterable of 4 joint angles [rad].")
 
         # If the current command is the same as the previous command, do nothing
-        if phi_cmd == self._phi:
+        if np.equal(phi_cmd, self._phi).all():
             return  # no movement needed
         else:
             self._phi = phi_cmd

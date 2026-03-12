@@ -162,6 +162,7 @@ class Camera:
                 break
             self.bs.apply(frame, learningRate=0.05)
         print("WARMED UP BACKGROUND MODEL...")
+        cap.release()
 
     pass
 
@@ -175,7 +176,7 @@ class Camera:
         vis = frame.copy()
         last_pts = []
         # 2) ball detection
-        found_ball, ball_info, dbg = detect_ball_center(frame, self.bs, last_pts)
+        found_ball, ball_info, mask = detect_ball_center(frame, self.bs, last_pts)
         if found_ball:
             u, v, best = ball_info
             cv2.circle(vis, (u, v), 5, (255, 0, 0), -1)
@@ -198,8 +199,9 @@ class Camera:
         if RBGD_frames is None:
             return None
 
+        
         # Obtain Ball XYZ from RGBD frame and
-        XYZ = self.image_processing(RBGD_frames)
+        # XYZ = self.image_processing(RBGD_frames)
     
 
 

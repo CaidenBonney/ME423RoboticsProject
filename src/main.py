@@ -1,4 +1,6 @@
+# from multiprocessing import Value
 import queue
+import numpy as np
 import threading
 import time
 
@@ -7,8 +9,9 @@ from Camera import Camera
 
 
 def camera_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: threading.Event) -> None:
-    cam = Camera()
+    # cam = Camera()
     ready.set()
+    return
 
     start = cam.elapsed_time()
     while not stop_event.is_set():
@@ -45,10 +48,20 @@ def arm_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: t
             continue
 
         ballXYZ = ballXYZ_queue.get_nowait()
-
+        
         try:
             phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ)
             if not moved:
+                
+                inp = input("Input commands: ")
+                if inp == "home":
+                    ValueError("Arm homing command received")
+                elif len(inp.split(",")) == 4:
+                    inp_ls = inp.split(",")
+                    phi_cmd = np.array([float(inp_ls[0]), float(inp_ls[1]), float(inp_ls[2]), float(inp_ls[3])], dtype=np.float64)
+                elif inp == "exit":
+                    ValueError("Exit command received")
+                
                 arm.move(phi_Cmd=phi_cmd)
                 moved = True
         except ValueError as e:
