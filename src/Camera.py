@@ -70,47 +70,53 @@ class Camera:
         BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
         MIN_VALID_CORNERS = 3
 
-        frames = self.pipeline.wait_for_frames()
-        aligned_frames = self.align.process(frames)
-        color = aligned_frames.get_color_frame()
-        depth = aligned_frames.get_depth_frame()
-        frame = np.asanyarray(color.get_data())
-        vis = frame.copy()
-        K = np.array(
-            [[self.intrinsics.fx, 0, self.intrinsics.ppx], [0, self.intrinsics.fy, self.intrinsics.ppy], [0, 0, 1]],
-            dtype=np.float64,
-        )
-        dist = np.zeros((5, 1), dtype=np.float64)
+        marker_found = False
+        while not marker_found:
+            frames = self.pipeline.wait_for_frames()
+            aligned_frames = self.align.process(frames)
+            color = aligned_frames.get_color_frame()
+            depth = aligned_frames.get_depth_frame()
+            frame = np.asanyarray(color.get_data())
+            vis = frame.copy()
+            K = np.array(
+                [[self.intrinsics.fx, 0, self.intrinsics.ppx], [0, self.intrinsics.fy, self.intrinsics.ppy], [0, 0, 1]],
+                dtype=np.float64,
+            )
+            dist = np.zeros((5, 1), dtype=np.float64)
 
-        dictionary = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
-        params = cv2.aruco.DetectorParameters()
-        obj_pts_marker = create_marker_object_points(MARKER_LENGTH_M)
+            dictionary = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
+            params = cv2.aruco.DetectorParameters()
+            obj_pts_marker = create_marker_object_points(MARKER_LENGTH_M)
 
-        # 1) camera -> marker transform (R,t)
-        ok_pose, R_m_c, t_m_c, method, all_corners, ids = get_camera_to_marker_transform(
-            frame, depth, self.intrinsics, K, dist, dictionary, params, obj_pts_marker
-        )
+            # 1) camera -> marker transform (R,t)
+            ok_pose, R_m_c, t_m_c, method, all_corners, ids = get_camera_to_marker_transform(
+                frame, depth, self.intrinsics, K, dist, dictionary, params, obj_pts_marker
+            )
 
-        if ids is not None:
-            cv2.aruco.drawDetectedMarkers(vis, all_corners, ids)
+            if ids is not None:
+                cv2.aruco.drawDetectedMarkers(vis, all_corners, ids)
+                cv2.imshow(vis)
+                print("ARUCO MARKER DETCTED ...")
+                cv2.waitKey(0)
 
-        if ok_pose:
-            print("Camera to marker pose found")
-            # Draw axes (need marker->camera pose; invert back for drawing)
-            # marker->camera: R_c_m = R_m_c^T, t_c_m = -R_c_m * t_m_c
-            R_c_m = R_m_c.T
-            t_c_m = -R_c_m @ t_m_c
-            # rvec_draw, _ = cv2.Rodrigues(R_c_m)
-            # tvec_draw = t_c_m.reshape(3, 1)
-            # cv2.drawFrameAxes(vis, K, dist, rvec_draw, tvec_draw, MARKER_LENGTH_M * 0.75)
-            self.R_m_c = R_m_c
-            self.t_m_c = t_m_c
-            self.robotTransformation = build_T(R_m_c, t_m_c)
-        else:
-            print("Camera to marker pose NOT found, using identity")
-            self.R_m_c = np.eye(3, dtype=np.float64)
-            self.t_m_c = np.zeros((3,), dtype=np.float64)
-            self.robotTransformation = np.eye(4, dtype=np.float64)
+            if ok_pose:
+                print("Camera to marker pose found")
+                # Draw axes (need marker->camera pose; invert back for drawing)
+                # marker->camera: R_c_m = R_m_c^T, t_c_m = -R_c_m * t_m_c
+                R_c_m = R_m_c.T
+                t_c_m = -R_c_m @ t_m_c
+                # rvec_draw, _ = cv2.Rodrigues(R_c_m)
+                # tvec_draw = t_c_m.reshape(3, 1)
+                # cv2.drawFrameAxes(vis, K, dist, rvec_draw, tvec_draw, MARKER_LENGTH_M * 0.75)
+                self.R_m_c = R_m_c
+                self.t_m_c = t_m_c
+                self.robotTransformation = build_T(R_m_c, t_m_c)
+                marker_found = True
+            else:
+                print("Camera to marker pose NOT found, using identity")
+                self.R_m_c = np.eye(3, dtype=np.float64)
+                self.t_m_c = np.zeros((3,), dtype=np.float64)
+                self.robotTransformation = np.eye(4, dtype=np.float64)
 
     def create_background_model(
         self,
@@ -201,16 +207,17 @@ class Camera:
 
         
         # Obtain Ball XYZ from RGBD frame and
-        # XYZ = self.image_processing(RBGD_frames)
+        XYZ = self.image_processing(RBGD_frames)
     
 
 
         # XYZ = self.image_processing(input)
 
-        XYZ = np.random.uniform(
-            low=np.array([0.50, -0.10, 0.55], dtype=np.float64),
-            high=np.array([0.40, 0.10, 0.45], dtype=np.float64),
-        )
+        # XYZ = np.random.uniform(
+        #     low=np.array([0.50, -0.10, 0.55], dtype=np.float64),
+        #     high=np.array([0.40, 0.10, 0.45], dtype=np.float64),
+        # )
+        print("ball position in Robot Coordinates: ", XYZ)
         return XYZ
 
 
