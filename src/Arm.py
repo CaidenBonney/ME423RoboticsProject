@@ -26,8 +26,8 @@ class Arm:
         self._phi_dot = np.array([0, 0, 0, 0], dtype=np.float64)  # [rad/s]
         self._position = np.array([0, 0, 0], dtype=np.float64)  # [m]
         self._R = np.identity(3, dtype=np.float64)  # rotation matrix from end-effector frame to base frame
-        self._gripper = np.float64(0.0)  # 0 = open, 1 = closed
-        self._led = np.array([0, 0, 0], dtype=np.float64)  # [R, G, B] values as floats from 0 to 1
+        self._gripper = np.array(0.0, dtype=np.float64)  # 0 = open, 1 = closed
+        self._led = np.array([1, 0, 1], dtype=np.float64)  # [R, G, B] values as floats from 0 to 1
 
         # self._xyz_origin_offset = np.array([0.45, 0.0, 0.49], dtype=np.float64)
         self._pos_q_max = 64
@@ -47,10 +47,8 @@ class Arm:
     def elapsed_time(self) -> float:
         return time.time() - self.startTime
 
-    def XYZ_to_phi_cmd(
-        self, XYZ: np.ndarray
-    ) -> tuple[Optional[np.ndarray], Optional[np.float64], Optional[np.ndarray]]:
-        
+    def ballXYZ_to_phi_cmd(self, XYZ: np.ndarray) -> Optional[np.ndarray]:
+
         # Convert input to a clean (3,) float vector; reject NaN/Inf early.
         xyz_meas = np.asarray(XYZ, dtype=np.float64).reshape(3)
         if not np.all(np.isfinite(xyz_meas)):
@@ -64,17 +62,17 @@ class Arm:
         self._q_write_idx = (self._q_write_idx + 1) % self._pos_q_max
         if self._q_count < self._pos_q_max:
             self._q_count += 1
-        
+
         # Default IK target is the most recent measurement.
         ik_xyz = xyz_meas
-        
+
         # If we have enough samples, fit a trajectory to recent XYZ history and predict
         # where it will be when it crosses a specific z-plane (z = 0.49 in your code).
         if self._q_count >= 3:
             oldest_idx = (self._q_write_idx - self._q_count) % self._pos_q_max
             order_idx = (oldest_idx + np.arange(self._q_count, dtype=np.int64)) % self._pos_q_max
-            t_hist = self._time_q[order_idx] # ordered times (oldest -> newest)
-            pos_hist = self._pos_q[order_idx, :] # ordered positions (oldest -> newest)
+            t_hist = self._time_q[order_idx]  # ordered times (oldest -> newest)
+            pos_hist = self._pos_q[order_idx, :]  # ordered positions (oldest -> newest)
 
             traj = update_trajectory(t_hist, pos_hist, self._pos_q_max)
 
@@ -88,23 +86,22 @@ class Arm:
             fut_dt = real_dt[real_dt >= (t_hist[-1] - traj.t0)]
 
             if fut_dt.size > 0:
-                t_hit_s = traj.t0 + np.min(fut_dt) # soonest future hit
+                t_hit_s = traj.t0 + np.min(fut_dt)  # soonest future hit
             elif real_dt.size > 0:
-                t_hit_s = traj.t0 + np.max(real_dt) # most recent past hit
+                t_hit_s = traj.t0 + np.max(real_dt)  # most recent past hit
             else:
-                t_hit_s = t_hist[-1] # no roots -> just use "now"
+                t_hit_s = t_hist[-1]  # no roots -> just use "now"
 
-            ik_xyz = traj.pos(t_hit_s)[:, 0] # predicted XYZ at the selected time
+            ik_xyz = traj.pos(t_hit_s)[:, 0]  # predicted XYZ at the selected time
 
         # Final frame for IK input is the predicted XYZ.
-        ik_pos_cmd = ik_xyz 
+        ik_pos_cmd = ik_xyz
         print(ik_pos_cmd)
 
         # Compute IK: all candidate solutions + a fallback solution.
         ik_all_solns, ik_soln = self.qarm_inverse_kinematics(ik_pos_cmd, 0, self.myArm.measJointPosition[0:4])
 
-
-        phi_seed = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64) # current joint angles
+        phi_seed = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64)  # current joint angles
         all_solns = np.asarray(ik_all_solns, dtype=np.float64)
         chosen_phi = None
 
@@ -112,7 +109,7 @@ class Arm:
         # (avoids elbow-up/down "flips" when multiple IK solutions exist).
         if all_solns.ndim == 2 and all_solns.shape[0] == 4:
             valid_cols = np.all(np.isfinite(all_solns), axis=0)
-            
+
             print(valid_cols)
 
             # If any valid solutions exist, choose the one closest to current joint angles.
@@ -132,24 +129,27 @@ class Arm:
             raise ValueError("IK failed: target appears unreachable.")
 
         phi_cmd = np.asarray(chosen_phi, dtype=np.float64)
-        gripper_cmd = np.float64(0.0) # currently hardcoded open
-        led_cmd = None # currently unused
 
-        return phi_cmd, gripper_cmd, led_cmd
+        return phi_cmd
 
     def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None) -> None:
         # region: Process Inputs:
         phi_cmd = np.asarray(phi_Cmd, dtype=np.float64)
         if phi_cmd.shape != (4,):
             raise ValueError("phi_Cmd must be an iterable of 4 joint angles [rad].")
-        self._phi = phi_cmd
+
+        # If the current command is the same as the previous command, do nothing
+        if phi_cmd == self._phi:
+            return  # no movement needed
+        else:
+            self._phi = phi_cmd
 
         # Optional gripper command
         if gripper_Cmd is not None:
             gripper_cmd = float(gripper_Cmd)
             if not (0.0 <= gripper_cmd <= 1.0):
                 raise ValueError("gripper_Cmd must be between 0 and 1.")
-            self._gripper = np.float64(gripper_cmd)
+            self._gripper = np.asarray(gripper_cmd, dtype=np.float64)
 
         # Optional led command
         if led_Cmd is not None:
@@ -166,10 +166,9 @@ class Arm:
         self.workspace_check(phi_cmd)
 
         # Commands arm to move to desired phi_cmd with gripper and LED states.
+        # Currently uses initial internal values for gripper and LED if not specified as an input.
         # Note that speed is not specified in this command.
-        self.myArm.read_write_std(
-            phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led
-        )
+        self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
 
     # Only checks physical limits of the arm
     def limit_check(self, phi_cmd) -> None:

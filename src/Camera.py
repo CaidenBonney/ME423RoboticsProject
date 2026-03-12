@@ -1,25 +1,24 @@
 import os
-from re import L
 import time
 from typing import Optional
 import numpy as np
-from numpy.random import randint
 import cv2
 import pyrealsense2 as rs
 import math
+
 
 class Camera:
     def __init__(self) -> None:
         self.startTime = time.time()
         self.sampleRate = 30
         self.sampleTime = 1 / self.sampleRate
-        self.bs = None # background susbtractor mpdel
-        self.intrinsics = None # camera intrinsics
-        self.robotTransformation = None # transformation from camera frame to robot frame
-        self.pipeline = None # realsense pipeline
-        self.profile = None # realsense pipeline profile
-        self.align = None # realsense align object
-        self.cameraPortID = 3 # This number may be different for every machine. It corresponds to the port that the camera is attached to
+        self.bs = None  # background susbtractor mpdel
+        self.intrinsics = None  # camera intrinsics
+        self.robotTransformation = None  # transformation from camera frame to robot frame
+        self.pipeline = None  # realsense pipeline
+        self.profile = None  # realsense pipeline profile
+        self.align = None  # realsense align object
+        self.cameraPortID = 3  # This number may be different for every machine. It corresponds to the port that the camera is attached to
         self.camera_matrix = None
         self.dist_coeffs = None
         self.R_m_c = None
@@ -28,11 +27,13 @@ class Camera:
 
     def elapsed_time(self) -> float:
         return time.time() - self.startTime
-    
+
     def capture_image(self) -> rs.align:
+        """ Captures an RGB and depth frame from the camera. 
+        Images are aligned."""
         frames = self.pipeline.wait_for_frames()
         return self.align.process(frames)
-    
+
     def cam_setup(self) -> None:
         # TODO: add camera initialization (device open, stream config, etc.).
         # configure depth and color streamss
@@ -50,14 +51,13 @@ class Camera:
         self.cam_calibration()
 
     def cam_calibration(self, path: str = "camera_calib.yml") -> None:
-        self.camera_matrix = np.array(([800, 0, 320], [0, 800, 240],[0, 0, 1]), dtype=np.float32)
+        self.camera_matrix = np.array(([800, 0, 320], [0, 800, 240], [0, 0, 1]), dtype=np.float32)
         self.dist_coeffs = np.zeros((5, 1), dtype=np.float32)
-        print("SOLVING ROBOT TRANSFORMATION...")
+        print("SOLVING ROBOT TRANSFORMATION ...")
         self.get_robot_transformation()
         print("ROBOT TRANSFORMATION SOLVED...")
         self.create_background_model()
         print("BACKGROUND MODEL CREATED...")
-
 
     def get_robot_transformation(self) -> np.ndarray:
         MARKER_ID = 67
@@ -66,8 +66,8 @@ class Camera:
 
         W, H, FPS = 640, 480, 30
 
-        NEIGHBOR_RADIUS_PX = 2     # depth sampling neighborhood for marker corners
-        BALL_DEPTH_RADIUS_PX = 2   # depth sampling neighborhood for ball center
+        NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
+        BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
         MIN_VALID_CORNERS = 3
 
         frames = self.pipeline.wait_for_frames()
@@ -76,9 +76,10 @@ class Camera:
         depth = aligned_frames.get_depth_frame()
         frame = np.asanyarray(color.get_data())
         vis = frame.copy()
-        K = np.array([[self.intrinsics.fx, 0,   self.intrinsics.ppx],
-                [0, self.intrinsics.fy, self.intrinsics.ppy],
-                [0, 0, 1]], dtype=np.float64)
+        K = np.array(
+            [[self.intrinsics.fx, 0, self.intrinsics.ppx], [0, self.intrinsics.fy, self.intrinsics.ppy], [0, 0, 1]],
+            dtype=np.float64,
+        )
         dist = np.zeros((5, 1), dtype=np.float64)
 
         dictionary = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
@@ -111,7 +112,14 @@ class Camera:
             self.t_m_c = np.zeros((3,), dtype=np.float64)
             self.robotTransformation = np.eye(4, dtype=np.float64)
 
-    def create_background_model(self, warm_up_video_path: str = "src/videos/warmup_video.mp4", warmup_frames: int = 30, fps: int = 60, W: int = 640, H: int = 480) -> None:
+    def create_background_model(
+        self,
+        warm_up_video_path: str = "src/videos/warmup_video.mp4",
+        warmup_frames: int = 30,
+        fps: int = 60,
+        W: int = 640,
+        H: int = 480,
+    ) -> None:
         # TODO: add camera calibration logic (make rerunable).
         # update transformation from camera frame to robot frame, create background model for motion detection
         warmup_frames_count = 0
@@ -124,7 +132,9 @@ class Camera:
         else:
             print(f"No existing video to delete at: {warm_up_video_path}")
         # initialize background subtractor
-        cap = cv2.VideoCapture(self.cameraPortID) # This number may be different for every machine. It corresponds to the port that the camera is attached to
+        cap = cv2.VideoCapture(
+            self.cameraPortID
+        )  # This number may be different for every machine. It corresponds to the port that the camera is attached to
         writer = cv2.VideoWriter(
             warm_up_video_path,
             cv2.VideoWriter_fourcc(*"mp4v"),
@@ -144,9 +154,7 @@ class Camera:
         writer.release()
         cap.release()
         # Background subtractor to remove static bright objects (like the screw)
-        self.bs = cv2.createBackgroundSubtractorMOG2(
-            history=500, varThreshold=25, detectShadows=False
-        )
+        self.bs = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=25, detectShadows=False)
         # Warm up background model
         for i in range(warmup_frames):
             ret, frame = cap.read()
@@ -154,19 +162,19 @@ class Camera:
                 break
             self.bs.apply(frame, learningRate=0.05)
         print("WARMED UP BACKGROUND MODEL...")
+
     pass
 
     def image_processing(self, aligned_frames: rs.align) -> np.ndarray:
         # TODO: convert image to XYZ
         rgb = aligned_frames.get_color_frame()
         depth = aligned_frames.get_depth_frame()
-        depth_data = depth.get_data()
         depth_image = np.asarray(depth.get_data(), dtype=np.uint8)
         frame = rgb.get_data()
         frame = np.asanyarray(frame)
         vis = frame.copy()
         last_pts = []
-                # 2) ball detection
+        # 2) ball detection
         found_ball, ball_info, dbg = detect_ball_center(frame, self.bs, last_pts)
         if found_ball:
             u, v, best = ball_info
@@ -181,22 +189,28 @@ class Camera:
                 xM, yM, zM = P_ball_marker.tolist()
 
         pass
-    
+
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
-    def capture_and_process(self) -> tuple[Optional[np.ndarray], Optional[np.float64], Optional[np.ndarray]]:
-        input = self.capture_image()
+    def capture_and_process(self) -> Optional[np.ndarray]:
+        """ Captures an RGB and depth frame from the camera and outputs the ball XYZ (w.r.t base coords)"""
+        # Grab the latest RGBD frames
+        RBGD_frames = self.capture_image()
+        if RBGD_frames is None:
+            return None
+
+        # Obtain Ball XYZ from RGBD frame and
+        XYZ = self.image_processing(RBGD_frames)
+    
+
 
         # XYZ = self.image_processing(input)
-        
+
         XYZ = np.random.uniform(
             low=np.array([0.50, -0.10, 0.55], dtype=np.float64),
             high=np.array([0.40, 0.10, 0.45], dtype=np.float64),
         )
-        
-        gripper_Cmd = None
-        led_Cmd = np.array([1.0, 0.0, 1.0], dtype=np.float64)
-        
-        return XYZ, gripper_Cmd, led_Cmd
+        return XYZ
+
 
 # ---------------- USER CONFIG ----------------
 MARKER_ID = 67
@@ -205,8 +219,8 @@ ARUCO_DICT = cv2.aruco.DICT_4X4_250
 
 W, H, FPS = 640, 480, 30
 
-NEIGHBOR_RADIUS_PX = 2     # depth sampling neighborhood for marker corners
-BALL_DEPTH_RADIUS_PX = 2   # depth sampling neighborhood for ball center
+NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
+BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
 MIN_VALID_CORNERS = 3
 
 # Ball detector thresholds (tune if needed)
@@ -215,22 +229,23 @@ V_LOW = 185
 AREA_MIN = 80
 AREA_MAX = 12000
 CIRC_MIN = 0.25
-SOLID_MIN = 0.40                                                                                             
+SOLID_MIN = 0.40
 ASPECT_MAX = 1.8
 
 WARMUP_FRAMES = 30
+
 
 # ---------------- MARKER MODEL ----------------
 def create_marker_object_points(marker_length_m: float) -> np.ndarray:
     L = marker_length_m
     return np.array(
         [
-            [-L / 2,  L / 2, 0],
-            [ L / 2,  L / 2, 0],
-            [ L / 2, -L / 2, 0],
+            [-L / 2, L / 2, 0],
+            [L / 2, L / 2, 0],
+            [L / 2, -L / 2, 0],
             [-L / 2, -L / 2, 0],
         ],
-        dtype=np.float64
+        dtype=np.float64,
     )
 
 
@@ -249,15 +264,20 @@ def robust_depth_at_pixel(depth_frame, u: int, v: int, radius: int) -> float:
         return 0.0
     return float(np.median(vals))
 
+
 def deproject(u: int, v: int, depth_m: float, intr: rs.intrinsics) -> np.ndarray:
     p = rs.rs2_deproject_pixel_to_point(intr, [float(u), float(v)], float(depth_m))
     return np.array(p, dtype=np.float64)  # [X,Y,Z] meters in camera frame
 
+
 def build_T(R: np.ndarray, t: np.ndarray) -> np.ndarray:
     T = np.eye(4, dtype=np.float64)
     T[:3, :3] = R
-    T[:3, 3] = t.reshape(3,)
+    T[:3, 3] = t.reshape(
+        3,
+    )
     return T
+
 
 def kabsch_rigid_transform(A: np.ndarray, B: np.ndarray):
     # B ≈ R*A + t
@@ -276,6 +296,7 @@ def kabsch_rigid_transform(A: np.ndarray, B: np.ndarray):
     t = centroid_B - R @ centroid_A
     return R, t
 
+
 def detect_marker_corners(frame_bgr: np.ndarray, marker_id: int, dictionary, params):
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
     detector = cv2.aruco.ArucoDetector(dictionary, params)
@@ -292,12 +313,15 @@ def detect_marker_corners(frame_bgr: np.ndarray, marker_id: int, dictionary, par
 
     return False, None, all_corners, ids
 
-def estimate_translation_from_depth_corners(R_cam_from_marker: np.ndarray,
-                                            corners_uv: np.ndarray,
-                                            obj_pts_marker: np.ndarray,
-                                            depth_frame,
-                                            intr: rs.intrinsics,
-                                            radius_px: int) -> np.ndarray | None:
+
+def estimate_translation_from_depth_corners(
+    R_cam_from_marker: np.ndarray,
+    corners_uv: np.ndarray,
+    obj_pts_marker: np.ndarray,
+    depth_frame,
+    intr: rs.intrinsics,
+    radius_px: int,
+) -> np.ndarray | None:
     t_list = []
     for (u, v), P_obj in zip(corners_uv, obj_pts_marker):
         ui, vi = int(round(u)), int(round(v))
@@ -314,8 +338,8 @@ def estimate_translation_from_depth_corners(R_cam_from_marker: np.ndarray,
     t_stack = np.vstack(t_list)
     return np.median(t_stack, axis=0)
 
-def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist,
-                                  dictionary, params, obj_pts_marker):
+
+def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictionary, params, obj_pts_marker):
     """
     Returns (ok, R_marker_from_cam, t_marker_from_cam, debug_method_string, corners, ids)
     """
@@ -341,11 +365,7 @@ def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist,
 
     # A) Hybrid: rotation from PnP, translation from depth corners
     ok_pnp, rvec, _tvec = cv2.solvePnP(
-        obj_pts_marker.astype(np.float32),
-        corners_uv.astype(np.float32),
-        K,
-        dist,
-        flags=cv2.SOLVEPNP_IPPE_SQUARE
+        obj_pts_marker.astype(np.float32), corners_uv.astype(np.float32), K, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE
     )
 
     if ok_pnp:

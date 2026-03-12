@@ -2,81 +2,88 @@ import queue
 import threading
 import time
 
-import numpy as np
-
 from Arm import Arm
 from Camera import Camera
 
 
-def camera_loop(cam: Camera, cmd_queue: queue.Queue, stop_event: threading.Event) -> None:
+def camera_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: threading.Event) -> None:
+    cam = Camera()
+    ready.set()
+
     start = cam.elapsed_time()
     while not stop_event.is_set():
-        cmd = cam.capture_and_process()
+        ballXYZ = cam.capture_and_process()
 
-        # Keep only the newest camera-derived command.
+        # Only publish if the camera produced a valid command
         try:
-            if cmd_queue.full():
-                cmd_queue.get_nowait()
-            cmd_queue.put_nowait(cmd)
+            if ballXYZ_queue.full():
+                ballXYZ_queue.get_nowait()
+            ballXYZ_queue.put_nowait(ballXYZ)
         except queue.Empty:
             pass
 
-        time.sleep(cam.sampleTime)
+        # # Pause/sleep to maintain same rate
+        # sleep_time = cam.sampleTime - (cam.elapsed_time() - start) % cam.sampleTime
+        # if sleep_time > 0:
+        #     time.sleep(sleep_time)
 
-        # Pause/sleep to maintain same rate
-        sleep_time = cam.sampleTime - (cam.elapsed_time() - start) % cam.sampleTime
-        if sleep_time > 0:
-            time.sleep(sleep_time)
+    # If you have a proper camera shutdown, do it here:
+    # cam.close()
+    pass
 
 
-def arm_loop(arm: Arm, cmd_queue: queue.Queue, stop_event: threading.Event) -> None:
-    # initialize latest command to be sent to arm to home position with no gripper or LED activation
-    latest_cmd = (
-        np.array([-0.45, 0.0, -0.49], dtype=np.float64),
-        np.float64(0.0),
-        np.array([0.0, 1.0, 0.0], dtype=np.float64),
-    )
+def arm_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: threading.Event) -> None:
+    arm = Arm()
+    ready.set()
 
+    moved = False
     start = arm.elapsed_time()
-    while not stop_event.is_set() and arm.myArm.status:
-        # get latest command from queue
-        try:
-            latest_cmd = cmd_queue.get_nowait()
-        except queue.Empty:
-            pass
 
-        # send latest command to arm
-        XYZ, gripper_cmd, led_cmd = latest_cmd
-        
+    while not stop_event.is_set() and arm.myArm.status:
+        if ballXYZ_queue.empty():
+            # Does nothing if there is no ballXYZ to process
+            continue
+
+        ballXYZ = ballXYZ_queue.get_nowait()
+
         try:
-            phi_cmd, _, _ = arm.XYZ_to_phi_cmd(XYZ)
-            arm.move(phi_Cmd=phi_cmd, gripper_Cmd=gripper_cmd, led_Cmd=led_cmd)
+            phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ)
+            if not moved:
+                arm.move(phi_Cmd=phi_cmd)
+                moved = True
         except ValueError as e:
             print(f"Command error: {e}")
-            arm.home()  # Move to home position on error
+            arm.home()
 
-        # Pause/sleep to maintain same rate
-        sleep_time = arm.sampleTime - (arm.elapsed_time() - start) % arm.sampleTime
-        if sleep_time > 0:
-            time.sleep(sleep_time)
+        # Only resets moved flag after the sample time has elapsed and we have already
+        # moved this sample to ensure that commands are only sent once per sampletime
+        if (arm.elapsed_time() - start) > arm.sampleTime and moved:
+            moved = False
+            start = start + arm.sampleTime
+
+    # terminate only after loop ends and no more read_write_std calls can happen
+    try:
+        arm.myArm.terminate()
+    except Exception as e:
+        print(f"Terminate error: {e}")
 
 
 def main() -> None:
-    stop_event = threading.Event()  # Main stop event for all threads
+    stop_event = threading.Event()
+    ballXYZ_queue: queue.Queue = queue.Queue(maxsize=1000)
 
-    # Shared queues for threads to communicate
-    cmd_queue: queue.Queue = queue.Queue(maxsize=1)  # shared queue for arm and camera commands
+    cam_ready = threading.Event()
+    arm_ready = threading.Event()
 
-    # Initialize arm and camera objects
-    arm = Arm()
-    cam = Camera()
+    cam_thread = threading.Thread(target=camera_worker, args=(ballXYZ_queue, stop_event, cam_ready), daemon=False)
+    arm_thread = threading.Thread(target=arm_worker, args=(ballXYZ_queue, stop_event, arm_ready), daemon=False)
 
-    # Create and start threads for camera and arm
-    cam_thread = threading.Thread(target=camera_loop, args=(cam, cmd_queue, stop_event), daemon=True)
-    arm_thread = threading.Thread(target=arm_loop, args=(arm, cmd_queue, stop_event), daemon=True)
-    # TODO: add thread for trajectory planning to implement between camera and arm threads if needed
     cam_thread.start()
     arm_thread.start()
+
+    # Wait for both to initialize (prevents “use before init” issues)
+    cam_ready.wait()
+    arm_ready.wait()
 
     try:
         while arm_thread.is_alive():
@@ -85,9 +92,10 @@ def main() -> None:
         pass
     finally:
         stop_event.set()
-        cam_thread.join(timeout=1.0)
-        arm_thread.join(timeout=1.0)
-        arm.myArm.terminate()
+        # unblock if needed (optional)
+        # cmd_queue.put_nowait(latest_cmd)  # or just ignore
+        cam_thread.join()
+        arm_thread.join()
 
 
 if __name__ == "__main__":
