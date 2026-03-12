@@ -189,8 +189,8 @@ class Camera:
         # XYZ = self.image_processing(input)
         
         XYZ = np.random.uniform(
-            low=np.array([-0.50, -0.10, -0.55], dtype=np.float64),
-            high=np.array([-0.40, 0.10, -0.45], dtype=np.float64),
+            low=np.array([0.50, -0.10, 0.55], dtype=np.float64),
+            high=np.array([0.40, 0.10, 0.45], dtype=np.float64),
         )
         
         gripper_Cmd = None

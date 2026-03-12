@@ -13,13 +13,14 @@ def camera_worker(cmd_queue: queue.Queue, stop_event: threading.Event, ready: th
 
     start = cam.elapsed_time()
     while not stop_event.is_set():
-        cmd = cam.capture_and_process()
+        xyz, _, _ = cam.capture_and_process()
 
-        # keep only newest
+        # Only publish if the camera produced a valid command
         try:
             if cmd_queue.full():
                 cmd_queue.get_nowait()
-            cmd_queue.put_nowait(cmd)
+            cmd_queue.put_nowait(xyz)
+            print (f"XYZ sent: {xyz}")
         except queue.Empty:
             pass
 
@@ -35,28 +36,34 @@ def arm_worker(cmd_queue: queue.Queue, stop_event: threading.Event, ready: threa
     arm = Arm()         # <-- create in SAME thread that uses it
     ready.set()
 
-    latest_cmd = (
-        np.array([-0.45, 0.0, -0.49], dtype=np.float64),
-        np.float64(0.0),
-        np.array([0.0, 1.0, 0.0], dtype=np.float64),
-    )
+    latest_cmd = np.array([0.45, 0.0, 0.49], dtype=np.float64)
+    changed_command = False
 
     start = arm.elapsed_time()
     try:
         while not stop_event.is_set() and arm.myArm.status:
             try:
-                latest_cmd = cmd_queue.get_nowait()
+                cmd = cmd_queue.get_nowait()
+                if np.array_equal(cmd, latest_cmd):
+                    changed_command = False
+                else:
+                    latest_cmd = cmd
+                    changed_command = True
             except queue.Empty:
                 pass
 
-            XYZ, gripper_cmd, led_cmd = latest_cmd
+            XYZ = latest_cmd
+            print (f"XYZ received: {XYZ}")
+            gripper_cmd = np.float64(0.0) # HARDCODED BECAUSE ARM SHOULD DETERMINE GRIPPER AND COLOR
+            led_cmd = np.array([1.0, 0.0, 1.0], dtype=np.float64) # HARDCODED BECAUSE ARM SHOULD DETERMINE GRIPPER AND COLOR
 
-            try:
-                phi_cmd, _, _ = arm.XYZ_to_phi_cmd(XYZ)
-                arm.move(phi_Cmd=phi_cmd, gripper_Cmd=gripper_cmd, led_Cmd=led_cmd)
-            except ValueError as e:
-                print(f"Command error: {e}")
-                arm.home()
+            if changed_command:
+                try:
+                    phi_cmd, _, _ = arm.XYZ_to_phi_cmd(XYZ)
+                    arm.move(phi_Cmd=phi_cmd, gripper_Cmd=gripper_cmd, led_Cmd=led_cmd)
+                except ValueError as e:
+                    print(f"Command error: {e}")
+                    arm.home()
 
             sleep_time = arm.sampleTime - (arm.elapsed_time() - start) % arm.sampleTime
             if sleep_time > 0:
