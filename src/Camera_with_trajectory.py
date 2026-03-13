@@ -97,7 +97,7 @@ class Camera:
 
             if ids is not None:
                 cv2.aruco.drawDetectedMarkers(vis, all_corners, ids)
-                cv2.imshow(vis)
+                self.current_frame = vis
                 print("ARUCO MARKER DETCTED ...")
                 cv2.waitKey(0)
 
@@ -107,9 +107,10 @@ class Camera:
                 # marker->camera: R_c_m = R_m_c^T, t_c_m = -R_c_m * t_m_c
                 R_c_m = R_m_c.T
                 t_c_m = -R_c_m @ t_m_c
-                # rvec_draw, _ = cv2.Rodrigues(R_c_m)
-                # tvec_draw = t_c_m.reshape(3, 1)
-                # cv2.drawFrameAxes(vis, K, dist, rvec_draw, tvec_draw, MARKER_LENGTH_M * 0.75)
+                rvec_draw, _ = cv2.Rodrigues(R_c_m)
+                tvec_draw = t_c_m.reshape(3, 1)
+                cv2.drawFrameAxes(vis, K, dist, rvec_draw, tvec_draw, MARKER_LENGTH_M * 0.75)
+                self.current_frame = vis
                 self.R_m_c = R_m_c
                 self.t_m_c = t_m_c
                 self.robotTransformation = build_T(R_m_c, t_m_c)
@@ -213,7 +214,7 @@ class Camera:
         XYZ = self.image_processing(RBGD_frames)
     
         # change coordinates into camera frame so trajectory can be projected onto frame
-        XYZ_cam = np.linalg.solve(self.R_m_c, np.asanarray(XYZ) - self.t_m_c)
+        XYZ_cam = np.linalg.solve(self.R_m_c, np.asanyarray(XYZ) - self.t_m_c)
 
         # XYZ = self.image_processing(input)
 
@@ -233,8 +234,13 @@ class Camera:
         self.trajectory = update_trajectory(t, XYZ_cam, sliding_window_size)
         for i in range(20):
             t += 0.05 # timestep in seconds
-            position = tuple(rs.project_point_to_pixel(self.intrinsics, self.trajectory.pos(t)))
+            # print("self.trajectory.pos(t): ", self.trajectory.pos(t).reshape(3,))
+            pos_list = [self.trajectory.pos(t).reshape(3,)[i] for i in range(3)]
+            print("self.intrinsics type: ", type(self.intrinsics))
+            position = tuple(rs.rs2_project_point_to_pixel(self.intrinsics, pos_list)) # project trajectory point back to pixel coordinates for drawing. Need intrinsics for this, so may need to check type requirement for XYZ_cam
             # need to check type requirement for XYZ_cam
+            print("projected position: ", position)
+            position = (int(position[0]), int(position[1]))
             cv2.drawMarker(self.current_frame, position, color, markerType=marker_type, markerSize=marker_size, thickness=thickness, line_type=line_type)
         print("ball position in Robot Coordinates: ", XYZ)
         return XYZ

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from turtle import pos
 import numpy as np
 
 
@@ -15,6 +16,9 @@ class Trajectory:
         """Position at time tt (seconds). Returns (3,) for scalar tt or (3,N) for array."""
         tt = np.asarray(tt)
         t_shift = tt - self.t0
+        print("self.px: ", self.px)
+        print("self.py: ", self.py)
+        print("self.pz: ", self.pz)
         x = np.polyval(self.px, t_shift)
         y = np.polyval(self.py, t_shift)
         z = np.polyval(self.pz, t_shift)
@@ -46,14 +50,21 @@ def update_trajectory(t: np.ndarray, pos: np.ndarray, window_size: int) -> Traje
     pos = np.asarray(pos)
 
     if t.size > window_size:
+        print("t.size: ", t.size)
         t = t[-window_size:]
         pos = pos[-window_size:, :]
 
     t0 = float(t[0])
     t_shift = t - t0
 
-    px = np.polyfit(t_shift, pos[:, 0], 1)
-    py = np.polyfit(t_shift, pos[:, 1], 1)
-    pz = np.polyfit(t_shift, pos[:, 2], 2)
-
+    print("pos: ", pos)
+    if pos.ndim > 1:
+        print("second point received in trajectory!")
+        px = np.polyfit(t_shift, pos[:,0], 1)
+        py = np.polyfit(t_shift, pos[:,1], 1)
+        pz = np.polyfit(t_shift, pos[:,2], 2)
+    else:
+        px = np.asanyarray([0, pos[0]]) # coefficients for degree 1 polynomial: px[0]*t_shift + px[1]
+        py = np.asanyarray([0, pos[1]]) # coefficients for degree 1 polynomial: py[0]*t_shift + py[1]
+        pz = np.asanyarray([0, 0, pos[2]]) # coefficients for degree 2 polynomial: pz[0]*t_shift^2 + pz[1]*t_shift + pz[2]
     return Trajectory(px=px, py=py, pz=pz, t0=t0)
