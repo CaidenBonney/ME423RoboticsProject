@@ -10,7 +10,7 @@ from ball_XYZ_to_Trajectory import update_trajectory
 def main() -> None:
     # === Parameters (same as MATLAB) ===
     dt = 0.033
-    window_size = 40
+    window_size = 1000
     noise_level = 0.2
 
     t_list: list[float] = []
@@ -23,7 +23,7 @@ def main() -> None:
         # Input initial velocities/positions here
         x_true = 2 * tk
         y_true = 1.5 * tk
-        z_true = 1 + 10*tk - 4.9 * tk**2
+        z_true = -2 + 10*tk - 4.9 * tk**2
 
         x_messy = x_true + noise_level * np.random.randn()
         y_messy = y_true + noise_level * np.random.randn()
@@ -52,9 +52,11 @@ def main() -> None:
     t_model = np.linspace(t[0], t[-1] + 0.3, 200)
     model_vals = traj.pos(t_model).T  # (N,3)
 
-    px = np.round(traj.px.astype(float), 4)
-    py = np.round(traj.py.astype(float), 4)
-    pz = np.round(traj.pz.astype(float), 4)
+    px = traj.px
+    py = traj.py
+    pz = traj.pz
+    t0 = traj.t0
+    
 
     # === Plot measured samples and final fitted model ===
     '''
@@ -80,25 +82,33 @@ def main() -> None:
     plt.show()
     '''
 
-    # === Print polynomial equations (rounded like MATLAB) ===
-    '''
-    print(f"Polynomial equations for the trajectory at t = {t[-1]:.6f}:")
-    print(f"x(t) = {px[0]}*(t-t0) + {px[1]}")
-    print(f"y(t) = {py[0]}*(t-t0) + {py[1]}")
-    print(f"z(t) = {pz[0]}*(t-t0)^2 + {pz[1]}*(t-t0) + {pz[2]}")
-    print(f"t0 = {t0}")
-    '''
-
     # === Calculating intercept time (t_p) and intercept position (p_p) ===
     # Coefficients to solve z(t) = z_p
+    t_p = None
     z_p = 0.49
-    coeffs = np.array([pz[0], pz[1], pz[2] - z_p])
-    t_offsets = np.roots(coeffs)
+    print(traj.pz[0])
+    print(traj.pz[1])
+    print(traj.pz[2])
+    coeffs = np.array([traj.pz[0], traj.pz[1], traj.pz[2] - z_p])
+    t_roots = np.roots(coeffs)
+    print(t_roots)
+    print(traj.t0)
+    t_roots = t_roots[np.isreal(t_roots)].real
 
-    # Pick the intercept time
-    t0 = traj.t0
-    t_p = t0 + max(t_offsets)
+    # Verify that the ball is on the way down when t_p is selected
+    for r in t_roots: 
+        t_world = r + traj.t0
+        vz = traj.vel(t_world)[2]  # vertical velocity
+        if vz < 0:   # descending
+            t_p = t_world
+            break
     
+    if t_p is None:
+        print("No valid intercept found")
+        return
+
+    # Set the intercept location
+
     p_p = traj.pos(np.array([t_p]))[:, 0]
 
     x_p, y_p, z_p_actual = p_p
@@ -107,16 +117,19 @@ def main() -> None:
     print(f"x = {x_p:.4f}, y = {y_p:.4f}, z = {z_p_actual:.4f}")
 
     # === Verification plot of z_p ===
-    '''
+
     plt.figure(2)
     plt.plot(t, pos[:, 2], "o", label="Measured")
+    plt.xlim(0, 2.5)
+    plt.ylim(-2, 7)
     plt.plot(t_model, model_vals[:, 2], linewidth=2, label="Final Model")
+    plt.plot(t_p, z_p, "ro", markersize=10, label="Commanded Intercept")
     plt.ylabel("z (m)")
     plt.xlabel("Time (s)")
     plt.axhline(y=z_p, color='r', linestyle='-')
     plt.legend()
     plt.show()
-    '''
+    
     
 
 if __name__ == "__main__":
