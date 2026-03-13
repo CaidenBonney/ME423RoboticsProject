@@ -173,7 +173,14 @@ class Camera:
     pass
 
     def image_processing(self, aligned_frames: rs.align) -> np.ndarray:
-        # TODO: convert image to XYZ
+        """Process the aligned RGBD frames and return the ball position in camera coordinates.
+        Args:
+            aligned_frames (rs.align): The aligned RGBD frames.
+
+        Returns:
+            np.ndarray: The ball position in camera coordinates or None if no ball is detected.
+        """
+
         rgb = aligned_frames.get_color_frame()
         depth = aligned_frames.get_depth_frame()
         depth_image = np.asarray(depth.get_data(), dtype=np.uint8)
@@ -353,7 +360,25 @@ def estimate_translation_from_depth_corners(
 
 def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictionary, params, obj_pts_marker):
     """
-    Returns (ok, R_marker_from_cam, t_marker_from_cam, debug_method_string, corners, ids)
+    Uses the marker corners to estimate the camera to marker transform.
+
+    Args:
+        frame_bgr (np.ndarray): The RGB frame to estimate the camera to marker transform in.
+        depth_frame (rs.frame): The depth frame to estimate the camera to marker transform in.
+        intr (rs.intrinsics): The camera intrinsics.
+        K (np.ndarray): The camera matrix.
+        dist (np.ndarray): The camera distortion coefficients.
+        dictionary (cv2.aruco.getPredefinedDictionary): The marker dictionary.
+        params (cv2.aruco.DetectorParameters): The marker detector parameters.
+        obj_pts_marker (np.ndarray): The marker corners in object coordinates.
+
+    Returns:
+        (ok: Boolean, 
+        Optional[np.ndarray]: Rotation matrix from camera to marker, 
+        Optional[np.ndarray]: Translation vector from camera to marker,
+        Optional[str]: method used,
+        Optional[List[np.ndarray]]: all detected corners,
+        Optional[np.ndarray]: all detected ids)
     """
     found, corners_uv, all_corners, ids = detect_marker_corners(frame_bgr, MARKER_ID, dictionary, params)
     if not found:
@@ -409,7 +434,16 @@ def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictio
 
 
 def detect_ball_center(frame_bgr, bs, last_pts):
-    """Returns (found, (u,v), debug_info) using your white+motion style filter."""
+    """ Detects the ball center in the frame using the frame, background subtractor and last detected points.
+    Assumes the ball is white and moving. 
+    
+    Args:
+        frame_bgr (np.ndarray): The frame to detect the ball center in.
+        bs (cv2.BackgroundSubtractorMOG2): The background subtractor to use.
+        last_pts (list): The last detected points.
+
+    Returns:
+      (found: Boolean, Optional[(u,v)], "dict(mask=mask)") """
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
 
     white = cv2.inRange(hsv, (0, 0, V_LOW), (179, S_HIGH, 255))
