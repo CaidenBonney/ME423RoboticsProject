@@ -16,6 +16,9 @@ def camera_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready
     start = cam.elapsed_time()
     while not stop_event.is_set():
         ballXYZ = cam.capture_and_process()
+        
+        if ballXYZ is None:
+            continue
 
         # Only publish if the camera produced a valid command
         try:
