@@ -23,8 +23,8 @@ class Camera:
         self.dist_coeffs = None
         self.R_m_c = None
         self.t_m_c = None
-        self.current_frame = np.zeros(640, 480, 3)
-        self.trajectory = Trajectory()
+        self.current_frame = np.zeros([640, 480, 3], dtype=np.uint8)
+        self.trajectory = Trajectory(0, 0, 0, 0)
         self.cam_setup()
 
     def elapsed_time(self) -> float:
@@ -197,8 +197,8 @@ class Camera:
                 # Transform to marker frame: P_marker = R_m_c * P_cam + t_m_c
                 P_ball_marker = (self.R_m_c @ P_ball_cam) + self.t_m_c
                 xM, yM, zM = P_ball_marker.tolist()
-
-        pass
+                return np.asarray([xM, yM, zM], dtype=np.float64)
+        return np.asarray([-1, -1, -1], dtype=np.float64)
 
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
     def capture_and_process(self) -> Optional[np.ndarray]:
@@ -228,7 +228,7 @@ class Camera:
         thickness = 2
         sliding_window_size = 5
         line_type = cv2.LINE_AA # Anti-aliased line for smoother appearance
-        t = time.time() - self.startTime
+        t = float(time.time() - self.startTime)
         # Draw the marker
         self.trajectory = update_trajectory(t, XYZ_cam, sliding_window_size)
         for i in range(20):

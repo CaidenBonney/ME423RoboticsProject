@@ -10,15 +10,15 @@ from Camera_with_trajectory import Camera
 
 
 def camera_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: threading.Event) -> None:
-    trajectory_drawer = cv2.namedWindow("trajectory")
+    trajectory_drawer = cv2.namedWindow("trajectory", cv2.WINDOW_NORMAL)
     cam = Camera()
     ready.set()
 
     start = cam.elapsed_time()
     while not stop_event.is_set():
         ballXYZ = cam.capture_and_process()
-        cv2.imshow(cam.current_frame, "trajectory")
-        cv2.waitkey(0.1) # wait 0.1 ms. needed to display video feed
+        cv2.imshow("trajectory", cam.current_frame)
+        cv2.waitKey(1) # wait 0.1 ms. needed to display video feed
         # Only publish if the camera produced a valid command
         try:
             if ballXYZ_queue.full():
@@ -101,7 +101,7 @@ def main() -> None:
     arm_ready.wait()
 
     try:
-        while arm_thread.is_alive():
+        while cam_thread.is_alive():
             time.sleep(0.1)
     except KeyboardInterrupt:
         pass

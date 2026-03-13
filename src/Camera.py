@@ -186,9 +186,9 @@ class Camera:
         if found_ball:
             u, v, best = ball_info
             cv2.circle(vis, (u, v), 5, (255, 0, 0), -1)
-            cv2.drawContours(vis, [best["hull"]], -1, (0, 255, 0), 2)
+            # cv2.drawContours(vis, [best["hull"]], -1, (0, 255, 0), 2)
             
-            cv2.imshow("ball", vis)
+            # cv2.imshow("ball", vis)
             
             # depth -> 3D in camera frame
             z = robust_depth_at_pixel(depth, u, v, BALL_DEPTH_RADIUS_PX)
