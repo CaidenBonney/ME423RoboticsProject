@@ -95,7 +95,7 @@ class Camera:
 
             if ids is not None:
                 cv2.aruco.drawDetectedMarkers(vis, all_corners, ids)
-                cv2.imshow(vis)
+                cv2.imshow("camera_to_marker", vis)
                 print("ARUCO MARKER DETCTED ...")
                 cv2.waitKey(0)
 
@@ -187,6 +187,9 @@ class Camera:
             u, v, best = ball_info
             cv2.circle(vis, (u, v), 5, (255, 0, 0), -1)
             cv2.drawContours(vis, [best["hull"]], -1, (0, 255, 0), 2)
+            
+            cv2.imshow("ball", vis)
+            
             # depth -> 3D in camera frame
             z = robust_depth_at_pixel(depth, u, v, BALL_DEPTH_RADIUS_PX)
             if z > 0:
@@ -194,8 +197,8 @@ class Camera:
                 # Transform to marker frame: P_marker = R_m_c * P_cam + t_m_c
                 P_ball_marker = (self.R_m_c @ P_ball_cam) + self.t_m_c
                 xM, yM, zM = P_ball_marker.tolist()
+                return np.asarray([xM, yM, zM], dtype=np.float64)
 
-        pass
 
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
     def capture_and_process(self) -> Optional[np.ndarray]:
