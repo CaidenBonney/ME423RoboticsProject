@@ -9,9 +9,9 @@ from Camera import Camera
 
 
 def camera_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: threading.Event) -> None:
-    # cam = Camera()
+    cam = Camera()
     ready.set()
-    return
+    # return
 
     start = cam.elapsed_time()
     while not stop_event.is_set():
@@ -46,41 +46,41 @@ def arm_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: t
     start = arm.elapsed_time()
 
     while not stop_event.is_set() and arm.myArm.status:
-        # if ballXYZ_queue.empty():
-        #     # Does nothing if there is no ballXYZ to process
-        #     continue
+        if ballXYZ_queue.empty():
+            # Does nothing if there is no ballXYZ to process
+            continue
 
-        # ballXYZ = ballXYZ_queue.get_nowait()
+        ballXYZ = ballXYZ_queue.get_nowait()
 
         try:
-            # phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ)
-            phi_cmd = np.array([0.2, 0, 0, 0], dtype=np.float64)
+            phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ)
+            # phi_cmd = np.array([0.2, 0, 0, 0], dtype=np.float64)
             if not moved:
-                inp = input("Input commands: ")
-                if inp == "home":
-                    raise ValueError("Arm homing command received")
-                elif len(inp.split(",")) == 4:
-                    inp_ls = inp.split(",")
-                    phi_cmd = np.array(
-                        [
-                            float(inp_ls[0]),
-                            float(inp_ls[1]),
-                            float(inp_ls[2]),
-                            float(inp_ls[3]),
-                        ],
-                        dtype=np.float64,
-                    )
-                elif inp == "phi":
-                    print(arm.phi)
-                    continue
-                elif inp == "_phi":
-                    print(arm._phi)
-                    continue
-                elif inp == "_phi_offset":
-                    print(arm._phi_offset)
-                    continue
+                # inp = input("Input commands: ")
+                # if inp == "home":
+                #     raise ValueError("Arm homing command received")
+                # elif len(inp.split(",")) == 4:
+                #     inp_ls = inp.split(",")
+                #     phi_cmd = np.array(
+                #         [
+                #             float(inp_ls[0]),
+                #             float(inp_ls[1]),
+                #             float(inp_ls[2]),
+                #             float(inp_ls[3]),
+                #         ],
+                #         dtype=np.float64,
+                #     )
+                # elif inp == "phi":
+                #     print(arm.phi)
+                #     continue
+                # elif inp == "_phi":
+                #     print(arm._phi)
+                #     continue
+                # elif inp == "_phi_offset":
+                #     print(arm._phi_offset)
+                #     continue
 
-                print(f"Moving arm with command: {phi_cmd}")
+                # print(f"Moving arm with command: {phi_cmd}")
                 arm.move(phi_Cmd=phi_cmd)
                 moved = True
         except ValueError as e:
