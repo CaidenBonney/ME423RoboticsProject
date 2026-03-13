@@ -43,6 +43,7 @@ class Arm:
         self.home()
         # [rad] joint angles for 4 joints in order: base, shoulder, elbow, wrist
         self._phi_offset = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64)
+        print(self._phi_offset)
 
     def elapsed_time(self) -> float:
         return time.time() - self.startTime
@@ -99,9 +100,9 @@ class Arm:
         print(ik_pos_cmd)
 
         # Compute IK: all candidate solutions + a fallback solution.
-        ik_all_solns, ik_soln = self.qarm_inverse_kinematics(ik_pos_cmd, 0, self.myArm.measJointPosition[0:4])
+        ik_all_solns, ik_soln = self.qarm_inverse_kinematics(ik_pos_cmd, 0, self.phi)
 
-        phi_seed = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64)  # current joint angles
+        phi_seed = np.asarray(self.phi, dtype=np.float64)  # current joint angles
         all_solns = np.asarray(ik_all_solns, dtype=np.float64)
         chosen_phi = None
 
@@ -343,7 +344,9 @@ class Arm:
 
     @property
     def phi(self):
+        self.myArm.read_std()  # updates self.myArm.measJointPosition
         # Update phi to current state of the arm
+        print("trying to get phi")
         self._phi = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64) - self._phi_offset
         return self._phi
 
