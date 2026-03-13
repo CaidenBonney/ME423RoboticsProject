@@ -9,7 +9,7 @@ class Trajectory:
     px: np.ndarray  # degree 1 polynomial coeffs for x(t_shift)
     py: np.ndarray  # degree 1 polynomial coeffs for y(t_shift)
     pz: np.ndarray  # degree 2 polynomial coeffs for z(t_shift)
-    t0: float  # time origin for numerical stability
+    t0: float       # time origin for numerical stability
 
     def pos(self, tt: float | np.ndarray) -> np.ndarray:
         """Position at time tt (seconds). Returns (3,) for scalar tt or (3,N) for array."""

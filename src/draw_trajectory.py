@@ -3,20 +3,22 @@ import queue
 import numpy as np
 import threading
 import time
+import cv2
 
 from Arm import Arm
-from Camera import Camera
+from Camera_with_trajectory import Camera
 
 
 def camera_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: threading.Event) -> None:
-    # cam = Camera()
+    trajectory_drawer = cv2.namedWindow("trajectory")
+    cam = Camera()
     ready.set()
-    return
 
     start = cam.elapsed_time()
     while not stop_event.is_set():
         ballXYZ = cam.capture_and_process()
-
+        cv2.imshow(cam.current_frame, "trajectory")
+        cv2.waitkey(0.1) # wait 0.1 ms. needed to display video feed
         # Only publish if the camera produced a valid command
         try:
             if ballXYZ_queue.full():

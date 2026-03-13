@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 import pyrealsense2 as rs
 import math
-
+from Trajectory import Trajectory, update_trajectory
 
 class Camera:
     def __init__(self) -> None:
@@ -23,6 +23,8 @@ class Camera:
         self.dist_coeffs = None
         self.R_m_c = None
         self.t_m_c = None
+        self.current_frame = np.zeros(640, 480, 3)
+        self.trajectory = Trajectory()
         self.cam_setup()
 
     def elapsed_time(self) -> float:
@@ -179,6 +181,7 @@ class Camera:
         depth_image = np.asarray(depth.get_data(), dtype=np.uint8)
         frame = rgb.get_data()
         frame = np.asanyarray(frame)
+        self.current_frame = frame # store frame so trajectory can be drawn on and display
         vis = frame.copy()
         last_pts = []
         # 2) ball detection
@@ -206,10 +209,11 @@ class Camera:
             return None
 
         
-        # Obtain Ball XYZ from RGBD frame and
+        # Obtain Ball XYZ from RGBD frame in 
         XYZ = self.image_processing(RBGD_frames)
     
-
+        # change coordinates into camera frame so trajectory can be projected onto frame
+        XYZ_cam = np.linalg.solve(self.R_m_c, np.asanarray(XYZ) - self.t_m_c)
 
         # XYZ = self.image_processing(input)
 
@@ -217,6 +221,21 @@ class Camera:
         #     low=np.array([0.50, -0.10, 0.55], dtype=np.float64),
         #     high=np.array([0.40, 0.10, 0.45], dtype=np.float64),
         # )
+
+        color = (0, 0, 255)   # Red color in BGR
+        marker_type = cv2.MARKER_STAR
+        marker_size = 30
+        thickness = 2
+        sliding_window_size = 5
+        line_type = cv2.LINE_AA # Anti-aliased line for smoother appearance
+        t = time.time() - self.startTime
+        # Draw the marker
+        self.trajectory = update_trajectory(t, XYZ_cam, sliding_window_size)
+        for i in range(20):
+            t += 0.05 # timestep in seconds
+            position = tuple(rs.project_point_to_pixel(self.intrinsics, self.trajectory.pos(t)))
+            # need to check type requirement for XYZ_cam
+            cv2.drawMarker(self.current_frame, position, color, markerType=marker_type, markerSize=marker_size, thickness=thickness, line_type=line_type)
         print("ball position in Robot Coordinates: ", XYZ)
         return XYZ
 
