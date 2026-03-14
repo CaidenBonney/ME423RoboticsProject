@@ -45,6 +45,10 @@ class Camera:
         self.cameraPortID = 3  # This number may be different for every machine. It corresponds to the port that the camera is attached to
         self.camera_matrix = None
         self.dist_coeffs = None
+        self.u: Optional[int] = None
+        self.v: Optional[int] = None
+        self.z: Optional[float] = None
+        self.score = None
         self.rvec_draw = None
         self.tvec_draw = None
         self.R_m_c = None
@@ -234,16 +238,17 @@ class Camera:
         found_ball, ball_info, mask = detect_ball_center(frame, self.bs, last_pts)
         if found_ball:
             # print("BALL DETECTED ...")
-            u, v, best = ball_info
-            cv2.circle(self.current_frame, (u, v), 5, (255, 0, 0), -1)
+            self.u, self.v, best = ball_info
+            self.score = best["score"]
+            cv2.circle(self.current_frame, (self.u, self.v), 5, (255, 0, 0), -1)
             cv2.drawContours(self.current_frame, [best["hull"]], -1, (0, 255, 0), 2)
             
             # cv2.imshow("ball", vis)
             
             # depth -> 3D in camera frame
-            z = robust_depth_at_pixel(depth, u, v, BALL_DEPTH_RADIUS_PX)
-            if z > 0:
-                P_ball_cam = deproject(u, v, z, self.intrinsics)  # meters
+            self.z = robust_depth_at_pixel(depth, self.u, self.v, BALL_DEPTH_RADIUS_PX)
+            if self.z > 0:
+                P_ball_cam = deproject(self.u, self.v, self.z, self.intrinsics)  # meters
                 # Transform from camera frame to robot base frame
                 xR, yR, zR = self.Transform_Camera_to_Robot_Base(P_ball_cam)
 
