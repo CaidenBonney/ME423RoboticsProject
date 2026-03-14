@@ -1,5 +1,6 @@
 # from multiprocessing import Value
 import queue
+import cv2
 import numpy as np
 import threading
 import time
@@ -22,9 +23,11 @@ def camera_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready
 
         # Only publish if the camera produced a valid command
         try:
+            cv2.waitKey(1) # wait 1 ms. needed to display video feed
             if ballXYZ_queue.full():
                 ballXYZ_queue.get_nowait()
             ballXYZ_queue.put_nowait(ballXYZ)
+            cam.show_image()
         except queue.Empty:
             pass
 

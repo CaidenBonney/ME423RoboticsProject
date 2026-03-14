@@ -36,6 +36,8 @@ class Arm:
         self._q_write_idx = 0
         self._q_count = 0
 
+        self.traj = Trajectory(np.zeros(2), np.zeros(2), np.zeros(3), self.startTime, None, None) # initialize empty trajectory
+
         # transformation matrix from end-effector frame to base frame adjusted in qarm_forward_kinematics
         self.T04 = np.identity(4, dtype=np.float64)
         self.L_6 = 0.075  # distance from qarm end-effector center to net end effector center in meters
@@ -75,25 +77,26 @@ class Arm:
             t_hist = self._time_q[order_idx]  # ordered times (oldest -> newest)
             pos_hist = self._pos_q[order_idx, :]  # ordered positions (oldest -> newest)
 
-            traj = update_trajectory(t_hist, pos_hist, self._pos_q_max)
+            self.traj.update_trajectory(t_hist, pos_hist, self._pos_q_max)
 
             # Solve for times when the fitted z(t) hits the plane z = 0.49.
-            pz = traj.pz.copy()
+            pz = self.traj.pz.copy()
             pz[-1] -= 0.49  # plane of intersection is at z= 0.49
             z_roots = np.roots(pz)
 
             # Keep real roots only, then prefer future intersections if any exist.
             real_dt = z_roots[np.abs(z_roots.imag) < 1e-8].real
-            fut_dt = real_dt[real_dt >= (t_hist[-1] - traj.t0)]
+            fut_dt = real_dt[real_dt >= (t_hist[-1] - self.traj.t0)]
 
             if fut_dt.size > 0:
-                t_hit_s = traj.t0 + np.min(fut_dt)  # soonest future hit
+                t_hit_s = self.traj.t0 + np.min(fut_dt)  # soonest future hit
             elif real_dt.size > 0:
-                t_hit_s = traj.t0 + np.max(real_dt)  # most recent past hit
+                t_hit_s = self.traj.t0 + np.max(real_dt)  # most recent past hit
             else:
                 t_hit_s = t_hist[-1]  # no roots -> just use "now"
 
-            ik_xyz = traj.pos(t_hit_s)[:, 0]  # predicted XYZ at the selected time
+            ik_xyz = self.traj.predict_pos(t_hit_s)[:, 0]  # predicted XYZ at the selected time
+            print("ik_xyz: ", ik_xyz)
 
         # Final frame for IK input is the predicted XYZ.
         ik_pos_cmd = ik_xyz
