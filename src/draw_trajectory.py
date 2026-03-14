@@ -10,7 +10,7 @@ from Camera_with_trajectory import Camera
 
 
 def camera_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: threading.Event) -> None:
-    trajectory_drawer = cv2.namedWindow("trajectory", cv2.WINDOW_NORMAL)
+    trajectory_drawer = cv2.namedWindow("trajectory", cv2.WINDOW_AUTOSIZE)
     cam = Camera()
     cv2.imshow("trajectory", cam.current_frame)
     cv2.waitKey(0)
@@ -25,6 +25,7 @@ def camera_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready
             if ballXYZ_queue.full():
                 ballXYZ_queue.get_nowait()
             ballXYZ_queue.put_nowait(ballXYZ)
+            cam.show_image()
         except queue.Empty:
             pass
 
@@ -39,7 +40,8 @@ def camera_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready
 
 
 def arm_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: threading.Event) -> None:
-    arm = Arm()
+    # arm = Arm()
+    return 
     ready.set()
 
     moved = False

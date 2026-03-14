@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 import pyrealsense2 as rs
 import math
-from Trajectory import Trajectory, update_trajectory
+from Trajectory import Trajectory
 
 class Camera:
     def __init__(self) -> None:
@@ -24,7 +24,7 @@ class Camera:
         self.R_m_c = None
         self.t_m_c = None
         self.current_frame = np.zeros([640, 480, 3], dtype=np.uint8)
-        self.trajectory = Trajectory(0, 0, 0, 0)
+        self.trajectory = Trajectory(np.zeros(2), np.zeros(2), np.zeros(3), self.startTime, None, None) # initialize empty trajectory
         self.cam_setup()
 
     def elapsed_time(self) -> float:
@@ -97,7 +97,7 @@ class Camera:
 
             if ids is not None:
                 cv2.aruco.drawDetectedMarkers(vis, all_corners, ids)
-                self.current_frame = vis
+                self.current_frame = vis.copy()
                 print("ARUCO MARKER DETCTED ...")
                 cv2.waitKey(0)
 
@@ -110,7 +110,7 @@ class Camera:
                 rvec_draw, _ = cv2.Rodrigues(R_c_m)
                 tvec_draw = t_c_m.reshape(3, 1)
                 cv2.drawFrameAxes(vis, K, dist, rvec_draw, tvec_draw, MARKER_LENGTH_M * 0.75)
-                self.current_frame = vis
+                self.current_frame = vis.copy()
                 self.R_m_c = R_m_c
                 self.t_m_c = t_m_c
                 self.robotTransformation = build_T(R_m_c, t_m_c)
@@ -129,7 +129,8 @@ class Camera:
         W: int = 640,
         H: int = 480,
     ) -> None:
-        # TODO: add camera calibration logic (make rerunable).
+        
+        
         # update transformation from camera frame to robot frame, create background model for motion detection
         warmup_frames_count = 0
         if os.path.exists(warm_up_video_path):
@@ -140,10 +141,10 @@ class Camera:
                 print(f"Could not delete video {warm_up_video_path}: {e}")
         else:
             print(f"No existing video to delete at: {warm_up_video_path}")
-        # initialize background subtractor
-        cap = cv2.VideoCapture(
-            self.cameraPortID
-        )  # This number may be different for every machine. It corresponds to the port that the camera is attached to
+        # # initialize background subtractor
+        # cap = cv2.VideoCapture(
+        #     self.cameraPortID
+        # )  # This number may be different for every machine. It corresponds to the port that the camera is attached to
         writer = cv2.VideoWriter(
             warm_up_video_path,
             cv2.VideoWriter_fourcc(*"mp4v"),
@@ -151,20 +152,29 @@ class Camera:
             (W, H),
             True,
         )
-        # record warmup frames to video
+        # # record warmup frames to video
+        # while warmup_frames_count < warmup_frames:
+        #     ret, frame = cap.read()
+        #     if not ret:
+        #         print("failed to grab frame")
+        #         break
+        #     else:
+        #         writer.write(frame)
         while warmup_frames_count < warmup_frames:
-            ret, frame = cap.read()
-            if not ret:
-                print("failed to grab frame")
-                break
-            else:
-                writer.write(frame)
-                warmup_frames_count += 1
+            frames = self.pipeline.wait_for_frames()
+            aligned_frames = self.align.process(frames)
+            color = aligned_frames.get_color_frame()
+            if not color:
+                continue
+            frame = np.asanyarray(color.get_data())
+            writer.write(frame)
+            warmup_frames_count += 1
         writer.release()
-        cap.release()
+        # cap.release()
         # Background subtractor to remove static bright objects (like the screw)
         self.bs = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=25, detectShadows=False)
         # Warm up background model
+        cap = cv2.VideoCapture(warm_up_video_path)
         for i in range(warmup_frames):
             ret, frame = cap.read()
             if not ret:
@@ -172,7 +182,6 @@ class Camera:
             self.bs.apply(frame, learningRate=0.05)
         print("WARMED UP BACKGROUND MODEL...")
         cap.release()
-
     pass
 
     def image_processing(self, aligned_frames: rs.align) -> np.ndarray:
@@ -231,19 +240,22 @@ class Camera:
         line_type = cv2.LINE_AA # Anti-aliased line for smoother appearance
         t = float(time.time() - self.startTime)
         # Draw the marker
-        self.trajectory = update_trajectory(t, XYZ_cam, sliding_window_size)
+        self.trajectory.update_trajectory(np.asanyarray([t],dtype=float), XYZ_cam, sliding_window_size)
         for i in range(20):
             t += 0.05 # timestep in seconds
             # print("self.trajectory.pos(t): ", self.trajectory.pos(t).reshape(3,))
-            pos_list = [self.trajectory.pos(t).reshape(3,)[i] for i in range(3)]
-            print("self.intrinsics type: ", type(self.intrinsics))
+            pos_list = [self.trajectory.predict_pos(t).reshape(3,)[i] for i in range(3)]
             position = tuple(rs.rs2_project_point_to_pixel(self.intrinsics, pos_list)) # project trajectory point back to pixel coordinates for drawing. Need intrinsics for this, so may need to check type requirement for XYZ_cam
             # need to check type requirement for XYZ_cam
-            print("projected position: ", position)
+            # print("projected position: ", position)
             position = (int(position[0]), int(position[1]))
             cv2.drawMarker(self.current_frame, position, color, markerType=marker_type, markerSize=marker_size, thickness=thickness, line_type=line_type)
-        print("ball position in Robot Coordinates: ", XYZ)
+        # print("ball position in Robot Coordinates: ", XYZ)
         return XYZ
+    
+    def show_image(self):
+        cv2.waitKey(1) # wait 0.1 ms. needed to display video feed
+        cv2.imshow("camera_pov", self.current_frame)
 
 
 # ---------------- USER CONFIG ----------------

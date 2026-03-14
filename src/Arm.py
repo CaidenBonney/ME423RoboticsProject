@@ -7,7 +7,7 @@ from hal.products.qarm import QArmUtilities  # pyright: ignore[reportMissingImpo
 # Standard library imports
 import time
 import numpy as np
-from Trajectory import update_trajectory
+from Trajectory import Trajectory
 
 
 class Arm:
@@ -97,7 +97,7 @@ class Arm:
 
         # Final frame for IK input is the predicted XYZ.
         ik_pos_cmd = ik_xyz
-        print(ik_pos_cmd)
+        # print(ik_pos_cmd)
 
         # Compute IK: all candidate solutions + a fallback solution.
         ik_all_solns, ik_soln = self.qarm_inverse_kinematics(ik_pos_cmd, 0, self.phi)
@@ -110,9 +110,6 @@ class Arm:
         # (avoids elbow-up/down "flips" when multiple IK solutions exist).
         if all_solns.ndim == 2 and all_solns.shape[0] == 4:
             valid_cols = np.all(np.isfinite(all_solns), axis=0)
-
-            print(valid_cols)
-
             # If any valid solutions exist, choose the one closest to current joint angles.
             if np.any(valid_cols):
                 valid_solns = all_solns[:, valid_cols].T
@@ -346,7 +343,7 @@ class Arm:
     def phi(self):
         self.myArm.read_std()  # updates self.myArm.measJointPosition
         # Update phi to current state of the arm
-        print("trying to get phi")
+        # print("trying to get phi")
         self._phi = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64) - self._phi_offset
         return self._phi
 
