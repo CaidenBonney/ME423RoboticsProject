@@ -223,6 +223,7 @@ class Camera:
 
         Returns:
             np.ndarray: The ball position in camera coordinates or None if no ball is detected.
+            bool: whether or not the ball has been found in the frame
         """
 
         rgb = aligned_frames.get_color_frame()
@@ -257,7 +258,7 @@ class Camera:
             #     print("Invalid depth for ball ...")
         # else:
         #     print("BALL NOT DETECTED ...")
-        return np.asarray([0, 0, 0], dtype=np.float64)
+        return np.asarray([0, 0, 0], dtype=np.float64), found_ball
 
     def Transform_Camera_to_Robot_Base(self, P_ball_cam):
         """ Transform from camera frame to robot frame """
@@ -273,7 +274,7 @@ class Camera:
         return xR, yR, zR
 
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
-    def capture_and_process(self) -> Optional[np.ndarray]:
+    def capture_and_process(self) -> tuple[Optional[np.ndarray], bool]:
         """ Captures an RGB and depth frame from the camera and outputs the ball XYZ (w.r.t base coords)"""
         # Grab the latest RGBD frames
         RBGD_frames = self.capture_image()
@@ -282,7 +283,7 @@ class Camera:
 
         
         # Obtain Ball XYZ from RGBD frame and
-        XYZ = self.image_processing(RBGD_frames)
+        XYZ, ball_found = self.image_processing(RBGD_frames)
     
 
 
@@ -293,7 +294,7 @@ class Camera:
         #     high=np.array([0.40, 0.10, 0.45], dtype=np.float64),
         # )
         # print("ball position in Robot Coordinates: ", XYZ)
-        return XYZ
+        return XYZ, ball_found
     
     def show_image(self):
         cv2.waitKey(1) # wait 1 ms. needed to display video feed
