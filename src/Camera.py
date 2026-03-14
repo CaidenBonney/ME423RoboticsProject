@@ -24,6 +24,7 @@ class Camera:
         self.dist_coeffs = None
         self.R_m_c = None
         self.t_m_c = None
+        self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, 0.05332], [0, -1, 0, -0.10954], [0, 0, 0, 1]], dtype=np.float64) 
         self.current_frame = np.zeros((640, 480, 3), dtype=np.uint8)
         self.cam_setup()
 
@@ -224,16 +225,27 @@ class Camera:
             z = robust_depth_at_pixel(depth, u, v, BALL_DEPTH_RADIUS_PX)
             if z > 0:
                 P_ball_cam = deproject(u, v, z, self.intrinsics)  # meters
-                # Transform to marker frame: P_marker = R_m_c * P_cam + t_m_c
-                P_ball_marker = (self.R_m_c @ P_ball_cam) + self.t_m_c
-                xM, yM, zM = P_ball_marker.tolist()
-                return np.asarray([xM, yM, zM], dtype=np.float64)
+                # Transform from camera frame to robot base frame
+                xR, yR, zR = self.Transform_Camera_to_Robot_Base(P_ball_cam)
+
+                return np.asarray([xR, yR, zR], dtype=np.float64)
             # else:
             #     print("Invalid depth for ball ...")
         # else:
         #     print("BALL NOT DETECTED ...")
         return np.asarray([0, 0, 0], dtype=np.float64)
 
+    def Transform_Camera_to_Robot_Base(self, P_ball_cam):
+        """ Transform from camera frame to robot frame """
+
+        P_ball_marker = (self.R_m_c @ P_ball_cam) + self.t_m_c
+
+        # Make ball into 4x1 vector
+        P_ball_marker_h = np.append(P_ball_marker, 1.0)
+        # Transform to base frame
+        P_ball_base_h = self.Base_ArUco_Transformation @ P_ball_marker_h
+        xR, yR, zR = P_ball_base_h[:3].tolist()
+        return xR, yR, zR
 
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
     def capture_and_process(self) -> Optional[np.ndarray]:

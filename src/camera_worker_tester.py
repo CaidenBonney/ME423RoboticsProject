@@ -16,12 +16,12 @@ cam = Camera()
 # cv2.imshow(window_name, cam.current_frame)
 cam.show_image()
 while True:
-    # start = cam.elapsed_time()
-    # ballXYZ = cam.capture_and_process()
-    start = time.perf_counter()
+    start = cam.elapsed_time()
     ballXYZ = cam.capture_and_process()
-    elapsed = time.perf_counter() - start
-    print(f"capture_and_process took {elapsed:.6f} seconds ({elapsed*1000:.2f} ms)")
+    # start = time.perf_counter()
+    # ballXYZ = cam.capture_and_process()
+    # elapsed = time.perf_counter() - start
+    # print(f"capture_and_process took {elapsed:.6f} seconds ({elapsed*1000:.2f} ms)")
 
 
 
@@ -31,13 +31,13 @@ while True:
         if ballXYZ_queue.full():
             ballXYZ_queue.get_nowait()
         ballXYZ_queue.put_nowait(ballXYZ)
-        start_show = time.perf_counter()
+        # start_show = time.perf_counter()
         cam.show_image()
-        elapsed_show = time.perf_counter() - start_show
-        print(f"im_show took {elapsed_show:.6f} seconds ({elapsed_show*1000:.2f} ms)")
+        # elapsed_show = time.perf_counter() - start_show
+        # print(f"im_show took {elapsed_show:.6f} seconds ({elapsed_show*1000:.2f} ms)")
 
         # print("imshowing frame in tester...")
-        # print(ballXYZ)
+        print(ballXYZ)
     except queue.Empty:
         pass
 
