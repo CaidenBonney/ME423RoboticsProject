@@ -20,6 +20,11 @@ BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
 MIN_VALID_CORNERS = 3
 
 # Ball detector thresholds (tune if needed)
+WHITE_BALL_COLOR = 0
+ORANGE_BALL_COLOR = 1
+GREEN_BALL_COLOR = 2
+
+# White mask values
 S_HIGH = 70
 V_LOW = 185
 AREA_MIN = 80
@@ -235,7 +240,7 @@ class Camera:
         # print("current frame set in camera object...")
         last_pts = []
         # 2) ball detection
-        found_ball, ball_info, mask = detect_ball_center(frame, self.bs, last_pts)
+        found_ball, ball_info, mask = detect_ball_center(frame, self.bs, last_pts, ball_color=WHITE_BALL_COLOR)
         if found_ball:
             # print("BALL DETECTED ...")
             self.u, self.v, best = ball_info
@@ -479,9 +484,8 @@ def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictio
     return True, R_marker_from_cam, t_marker_from_cam, method, all_corners, ids
 
 
-def detect_ball_center(frame_bgr, bs, last_pts):
+def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COLOR):
     """ Detects the ball center in the frame using the frame, background subtractor and last detected points.
-    Assumes the ball is white and moving. 
     
     Args:
         frame_bgr (np.ndarray): The frame to detect the ball center in.
@@ -489,20 +493,67 @@ def detect_ball_center(frame_bgr, bs, last_pts):
         last_pts (list): The last detected points.
 
     Returns:
-      (found: Boolean, Optional[(u,v)], "dict(mask=mask)") """
+      (found: Boolean, Optional[(u,v, best: dict)], "dict(mask=mask)") """
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-
-    white = cv2.inRange(hsv, (0, 0, V_LOW), (179, S_HIGH, 255))
     k5 = np.ones((5, 5), np.uint8)
     k3 = np.ones((3, 3), np.uint8)
-    white = cv2.morphologyEx(white, cv2.MORPH_OPEN, k5, iterations=1)
-    white = cv2.morphologyEx(white, cv2.MORPH_CLOSE, k5, iterations=2)
+    
+    # select ball color
+    if ball_color == WHITE_BALL_COLOR:
+        color_mask = cv2.inRange(hsv, (0, 0, V_LOW), (179, S_HIGH, 255))
+        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
+        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
+    elif ball_color == ORANGE_BALL_COLOR:
+    # Orange mask (covers the usual orange hue range; tune if needed)
+        # lower_orange = (8, 160, 175)
+        # upper_orange = (12, 255, 255)
+        # lower_orange = (6, 120, 140)
+        # upper_orange = (16, 255, 255)
+        # lower_orange = (8, 150, 120)
+        # upper_orange = (18, 255, 255)
+
+        # Bright Indoor lighting
+        lower_orange = (7, 160, 130)
+        upper_orange = (18, 255, 255)
+
+        # "Normal" Indoor Lighting
+        # lower_orange = (7, 140, 110)
+        # upper_orange = (18, 255, 255)
+
+        # Dimmer lighting
+        # lower_orange = (6, 130, 90)
+        # upper_orange = (20, 255, 255)
+        color_mask = cv2.inRange(hsv, lower_orange, upper_orange)
+        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
+        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
+    elif ball_color == GREEN_BALL_COLOR:
+        # Green mask (covers the usual green hue range; tune if needed)
+        lower_green = (92, 110, 120)
+        upper_green = (113, 255, 255)
+
+        # More "robust" for changing lighting
+        # lower_green = (38, 90, 100)
+        # upper_green = (65, 255, 255)
+
+        # sc of green ball
+        # lower_green = (70, 140, 120)
+        # upper_green = (82, 255, 255)
+
+        # sc of ball: robust for lighting
+        # lower_green = (68, 120, 100)
+        # upper_green = (84, 255, 255)
+
+        color_mask = cv2.inRange(hsv, lower_green, upper_green)
+        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
+        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
+    
+    
 
     fg = bs.apply(frame_bgr, learningRate=0.002)
     fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, k3, iterations=1)
     fg = cv2.dilate(fg, k5, iterations=1)
 
-    mask = cv2.bitwise_and(fg, white)
+    mask = cv2.bitwise_and(fg, color_mask)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     pred = None
