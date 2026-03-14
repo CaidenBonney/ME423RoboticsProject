@@ -17,7 +17,7 @@ def camera_worker(
     ready.set()
 
     while not stop_event.is_set():
-        ballXYZ = cam.capture_and_process()
+        ballXYZ, ball_found  = cam.capture_and_process()
 
         if ballXYZ is None:
             continue
@@ -63,7 +63,7 @@ def arm_worker(
                 cv2.LINE_AA,
             )
 
-            phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ)
+            phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found)
 
             cv2.putText(
                 arm_frame,

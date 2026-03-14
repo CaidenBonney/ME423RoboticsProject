@@ -37,6 +37,9 @@ class Arm:
         self._q_count = 0
 
         self.traj = Trajectory() # initialize empty trajectory
+        self.missed_frames = 0 # count the number of frames since the ball was last seen
+        self.missed_frames_max = 10
+        self.prev_phi_cmd = None
 
         # transformation matrix from end-effector frame to base frame adjusted in qarm_forward_kinematics
         self.T04 = np.identity(4, dtype=np.float64)
@@ -50,8 +53,13 @@ class Arm:
     def elapsed_time(self) -> float:
         return time.time() - self.startTime
 
-    def ballXYZ_to_phi_cmd(self, XYZ: np.ndarray) -> Optional[np.ndarray]:
-
+    def ballXYZ_to_phi_cmd(self, XYZ: np.ndarray, ball_found: bool) -> Optional[np.ndarray]:
+        if not ball_found:
+            self.missed_frames += 1
+            if self.missed_frames == self.missed_frames_max:
+                print("Creating new trajectory object, lost tracking")
+                self.traj = Trajectory()
+                return self.prev_phi_cmd
         # Convert input to a clean (3,) float vector; reject NaN/Inf early.
         xyz_meas = np.asarray(XYZ, dtype=np.float64).reshape(3)
         if not np.all(np.isfinite(xyz_meas)):
@@ -130,7 +138,7 @@ class Arm:
             raise ValueError("IK failed: target appears unreachable.")
 
         phi_cmd = np.asarray(chosen_phi, dtype=np.float64)
-
+        self.prev_phi_cmd = phi_cmd
         return phi_cmd
 
     def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None) -> None:
