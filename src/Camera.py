@@ -545,7 +545,7 @@ def detect_ball_center(frame_bgr, bs, last_pts):
 
         score = (-2.0 * dist_pred) + (0.25 * area) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
 
-        if best is None or score > best["score"]:
+        if best is None or (score > best["score"] and score > 350):
             best = dict(score=score, cx=cx, cy=cy, hull=hull, bbox=(x, y, w, h))
 
     if best is None:
