@@ -1,11 +1,17 @@
+import importlib
+import os
 from typing import Optional, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ball_XYZ_to_Trajectory import Trajectory
-from ball_XYZ_to_Trajectory import update_trajectory
+# from Trajectory import Trajectory
+module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../Trajectory.py"))
 
+# Load the module dynamically
+spec = importlib.util.spec_from_file_location("Trajectory", module_path)
+TRAJECTORY = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(TRAJECTORY)
 
 def main() -> None:
     # === Parameters (same as MATLAB) ===
@@ -15,7 +21,7 @@ def main() -> None:
 
     t_list: list[float] = []
     pos_list: list[Tuple[float, float, float]] = []
-    traj: Optional[Trajectory] = None
+    traj = TRAJECTORY.Trajectory()
 
     # === Simulate measurements and update model online ===
     for k in range(1, 101):
@@ -36,11 +42,11 @@ def main() -> None:
             t_arr = np.array(t_list, dtype=float)
             pos_arr = np.array(pos_list, dtype=float)
 
-            traj = update_trajectory(t_arr, pos_arr, window_size)
+            traj.update_trajectory(t_arr, pos_arr, window_size)
 
             # Predict 0.3 sec into future (kept for parity with MATLAB)
             t_predict = tk + 0.3
-            future_pos = traj.pos(t_predict)[:, 0]  # (3,)
+            future_pos = traj.predict_pos(t_predict)[:, 0]  # (3,)
             _ = future_pos  # use if needed
 
     if traj is None:
@@ -50,7 +56,7 @@ def main() -> None:
     pos = np.array(pos_list, dtype=float)
 
     t_model = np.linspace(t[0], t[-1] + 0.3, 200)
-    model_vals = traj.pos(t_model).T  # (N,3)
+    model_vals = traj.predict_pos(t_model).T  # (N,3)
 
     px = traj.px
     py = traj.py
@@ -98,7 +104,7 @@ def main() -> None:
     # Verify that the ball is on the way down when t_p is selected
     for r in t_roots: 
         t_world = r + traj.t0
-        vz = traj.vel(t_world)[2]  # vertical velocity
+        vz = traj.predict_vel(t_world)[2]  # vertical velocity
         if vz < 0:   # descending
             t_p = t_world
             break
@@ -109,7 +115,7 @@ def main() -> None:
 
     # Set the intercept location
 
-    p_p = traj.pos(np.array([t_p]))[:, 0]
+    p_p = traj.predict_pos(np.array([t_p]))[:, 0]
 
     x_p, y_p, z_p_actual = p_p
 
