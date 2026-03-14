@@ -43,7 +43,8 @@ class Camera:
         self.sampleTime = 1 / self.sampleRate
         self.bs = None  # background susbtractor mpdel
         self.intrinsics = None  # camera intrinsics
-        self.robotTransformation = None  # transformation from camera frame to robot frame
+        self.T_cam2ArUco = None  # transformation from camera frame to robot frame
+        self.T_cam2ArUco_inv = None  # inverse of T_cam2ArUco
         self.pipeline = None  # realsense pipeline
         self.profile = None  # realsense pipeline profile
         self.align = None  # realsense align object
@@ -59,7 +60,8 @@ class Camera:
         self.tvec_draw = None
         self.R_m_c = None
         self.t_m_c = None
-        self.Base_ArUco_Transformation = np.array([[1, 0, 0, 0.622], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
+        self.ArUco2Base_Transformation = np.array([[1, 0, 0, 0.622], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
+        self.ArUco2Base_Transformation_inv = np.linalg.inv(self.ArUco2Base_Transformation)
         # self.Base_ArUco_Transformation = np.array([[1, 0, 0, 0.402], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
         # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, -0.1], [0, -1, 0, 0.010], [0, 0, 0, 1]], dtype=np.float64)
         # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, 0.05332], [0, -1, 0, -0.10954], [0, 0, 0, 1]], dtype=np.float64) 
@@ -142,21 +144,22 @@ class Camera:
                 print("Camera to marker pose found")
                 # Draw axes (need marker->camera pose; invert back for drawing)
                 # marker->camera: R_c_m = R_m_c^T, t_c_m = -R_c_m * t_m_c
-                R_c_m = R_m_c.T
-                t_c_m = -R_c_m @ t_m_c
+                # R_c_m = R_m_c.T
+                # t_c_m = -R_c_m @ t_m_c
                 # rvec_draw, _ = cv2.Rodrigues(R_c_m)
                 # tvec_draw = t_c_m.reshape(3, 1)
                 # self.rvec_draw = rvec_draw
                 # self.tvec_draw = tvec_draw
                 self.R_m_c = R_m_c
                 self.t_m_c = t_m_c
-                self.robotTransformation = build_T(R_m_c, t_m_c)
+                self.T_cam2ArUco = build_T(self.R_m_c, self.t_m_c)
+                self.T_cam2ArUco_inv = np.linalg.inv(self.T_cam2ArUco)
                 marker_found = True
             else:
                 print("Camera to marker pose NOT found, using identity")
                 self.R_m_c = np.eye(3, dtype=np.float64)
                 self.t_m_c = np.zeros((3,), dtype=np.float64)
-                self.robotTransformation = np.eye(4, dtype=np.float64)
+                self.T_cam2ArUco = np.eye(4, dtype=np.float64)
 
     def create_background_model(
         self,
@@ -258,7 +261,7 @@ class Camera:
             if self.z > 0:
                 P_ball_cam = deproject(self.u, self.v, self.z, self.intrinsics)  # meters
                 # Transform from camera frame to robot base frame
-                xR, yR, zR = self.Transform_Camera_to_Robot_Base(P_ball_cam)
+                xR, yR, zR = self.T_Camera_to_RobotBase(P_ball_cam)
 
                 return (np.asarray([xR, yR, zR], dtype=np.float64), found_ball)
             # else:
@@ -267,18 +270,46 @@ class Camera:
         #     print("BALL NOT DETECTED ...")
         return (np.asarray([0, 0, 0], dtype=np.float64), found_ball)
 
-    def Transform_Camera_to_Robot_Base(self, P_ball_cam):
-        """ Transform from camera frame to robot frame """
-
-        P_ball_marker = (self.R_m_c @ P_ball_cam) + self.t_m_c
-        # xR, yR, zR = P_ball_marker.tolist()
-        # return xR, yR, zR
-        # Make ball into 4x1 vector
-        P_ball_marker_h = np.append(P_ball_marker, 1.0).reshape(4, 1)
-        # Transform to base frame
-        P_ball_base_h = self.Base_ArUco_Transformation @ P_ball_marker_h
-        xR, yR, zR = P_ball_base_h[:3, 0]
+    def T_Camera_to_RobotBase(self, P_ball_cam: np.ndarray) -> tuple[float, float, float]:
+        """ Transform from camera frame to robot frame 
+        
+        Args:
+            P_ball_cam (np.ndarray): 3x1 vector in camera frame (output of deproject)
+        
+            Returns:
+                xR, yR, zR (float): In robot base frame
+        """
+        #                                   turn 3x1 vector into 4x1 vector
+        P_ball_ArUco = self.T_cam2ArUco @ np.append(P_ball_cam, 1.0).reshape(4, 1)
+        P_ball_base = self.ArUco2Base_Transformation @ P_ball_ArUco
+        xR, yR, zR = P_ball_base[:3, 0]
         return xR, yR, zR
+    
+    def T_RobotBase_to_Camera(self, xR, yR, zR):
+        """ Transform from Robot base frame to camera frame 
+        
+        Args:
+            xR, yR, zR (float): coordinates in robot base frame
+        
+        Returns:
+            u, v, [int] """
+        # turn 3x1 vector into 4x1 vector
+        P_ball_base = np.array([xR, yR, zR, 1.0], dtype=np.float64)
+
+        # Convert from robot base frame to ArUco frame
+        if self.ArUco2Base_Transformation_inv is None:
+            raise ValueError("ArUco2Base_Transformation_inv is None")
+        P_ball_ArUco = self.ArUco2Base_Transformation_inv @ P_ball_base
+
+        # Convert from ArUco frame to camera frame
+        if self.T_cam2ArUco_inv is None:
+            raise ValueError("T_cam2ArUco_inv is None")
+        P_ball_cam = self.T_cam2ArUco_inv @ P_ball_ArUco
+
+        # Project XYZ_cam to pixel coordinates
+        u, v = tuple(rs.rs2_project_point_to_pixel(self.intrinsics, [P_ball_cam[0], P_ball_cam[1], P_ball_cam[2]])) 
+        return u, v
+    
 
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
     def capture_and_process(self) -> tuple[Optional[np.ndarray], bool]:
@@ -350,9 +381,7 @@ def deproject(u: int, v: int, depth_m: float, intr: rs.intrinsics) -> np.ndarray
 def build_T(R: np.ndarray, t: np.ndarray) -> np.ndarray:
     T = np.eye(4, dtype=np.float64)
     T[:3, :3] = R
-    T[:3, 3] = t.reshape(
-        3,
-    )
+    T[:3, 3] = t.reshape(3)
     return T
 
 
