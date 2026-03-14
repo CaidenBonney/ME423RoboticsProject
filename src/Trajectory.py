@@ -9,7 +9,7 @@ class Trajectory:
         self.px = np.array([0, 0]) # degree 1 polynomial coeffs for x(t_shift)
         self.py = np.array([0, 0]) # degree 1 polynomial coeffs for y(t_shift)
         self.pz = np.array([0, 0, 0]) # degree 2 polynomial coeffs for z(t_shift)
-        self.t0 = 0 # time origin for numerical stability
+        self.t0 = 0 # time origin for numerical stability (seconds). Gets set to first point timestamp
         self.t = np.array([]) 
         self.pos = np.array([]) 
 
@@ -36,6 +36,7 @@ class Trajectory:
 
 
     def update_trajectory(self, t: np.ndarray, pos: np.ndarray, window_size: int) -> None:
+        # t is the timestamp of the frame in which the point was detected in global time (seconds)
         t = np.asarray(t).reshape(-1)
         pos = np.asarray(pos).reshape(-1, 3)
 
@@ -54,6 +55,7 @@ class Trajectory:
 
         # Shift time for numerical stability
         self.t0 = float(self.t[0])
+        print("t0: ", self.t0)
         t_shift = self.t - self.t0
 
         # Fit only when enough points exist

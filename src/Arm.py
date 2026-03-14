@@ -53,7 +53,7 @@ class Arm:
     def elapsed_time(self) -> float:
         return time.time() - self.startTime
 
-    def ballXYZ_to_phi_cmd(self, XYZ: np.ndarray, ball_found: bool) -> Optional[np.ndarray]:
+    def ballXYZ_to_phi_cmd(self, XYZ: np.ndarray, ball_found: bool, timestamp: float) -> Optional[np.ndarray]:
         if not ball_found:
             self.missed_frames += 1
             if self.missed_frames == self.missed_frames_max:
@@ -86,7 +86,7 @@ class Arm:
             t_hist = self._time_q[order_idx]  # ordered times (oldest -> newest)
             pos_hist = self._pos_q[order_idx, :]  # ordered positions (oldest -> newest)
 
-            self.traj.update_trajectory(t_hist, pos_hist, self._pos_q_max)
+            self.traj.update_trajectory(timestamp, XYZ, self._pos_q_max)
 
             # Solve for times when the fitted z(t) hits the plane z = 0.49.
             pz = self.traj.pz.copy()
@@ -97,15 +97,18 @@ class Arm:
             real_dt = z_roots[np.abs(z_roots.imag) < 1e-8].real
             fut_dt = real_dt[real_dt >= (t_hist[-1] - self.traj.t0)]
 
+            case = 1 # trace logic for prediction
             if fut_dt.size > 0:
                 t_hit_s = self.traj.t0 + np.min(fut_dt)  # soonest future hit
             elif real_dt.size > 0:
                 t_hit_s = self.traj.t0 + np.max(real_dt)  # most recent past hit
+                case = 2
             else:
                 t_hit_s = t_hist[-1]  # no roots -> just use "now"
+                case = 3
 
-            ik_xyz = self.traj.predict_pos(t_hit_s)[:, 0]  # predicted XYZ at the selected time
-            print("ik_xyz: ", ik_xyz)
+            ik_xyz = self.traj.predict_pos(t_hit_s + self.traj.t0)[:, 0]  # predicted XYZ at the selected time
+            print("ik_xyz: ", ik_xyz, "t_hit_s: ", t_hit_s, "t0: ", self.traj.t0, "case: ", case)
 
         # Final frame for IK input is the predicted XYZ.
         ik_pos_cmd = ik_xyz

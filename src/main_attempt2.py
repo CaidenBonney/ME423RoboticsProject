@@ -17,7 +17,7 @@ def camera_worker(
     ready.set()
 
     while not stop_event.is_set():
-        ballXYZ, ball_found  = cam.capture_and_process()
+        ballXYZ, ball_found, timestamp  = cam.capture_and_process()
 
         if ballXYZ is None:
             continue
@@ -25,7 +25,7 @@ def camera_worker(
         try:
             if ballXYZ_queue.full():
                 ballXYZ_queue.get_nowait()
-            ballXYZ_queue.put_nowait((ballXYZ, ball_found))
+            ballXYZ_queue.put_nowait((ballXYZ, ball_found, timestamp))
         except queue.Empty:
             pass
 
@@ -47,7 +47,7 @@ def arm_worker(
         if ballXYZ_queue.empty():
             continue
 
-        ballXYZ, ball_found = ballXYZ_queue.get_nowait()
+        ballXYZ, ball_found, timestamp = ballXYZ_queue.get_nowait()
 
         try:
             arm_frame = cam.current_frame.copy()
@@ -63,7 +63,7 @@ def arm_worker(
                 cv2.LINE_AA,
             )
 
-            phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found)
+            phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found, timestamp)
 
             cv2.putText(
                 arm_frame,

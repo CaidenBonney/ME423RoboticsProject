@@ -93,7 +93,7 @@ class Camera:
         self.profile = self.pipeline.start(cfg)
         align_to = rs.stream.color
         self.align = rs.align(align_to)
-        self.intrinsics = self.profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
+        self.intrinsics = self.profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
         # cv2.namedWindow('depth_cam', cv2.WINDOW_AUTOSIZE)
         # cv2.namedWindow('rgb_cam', cv2.WINDOW_AUTOSIZE)
         self.startTime = time.time()
@@ -231,7 +231,7 @@ class Camera:
             np.ndarray: The ball position in camera coordinates or None if no ball is detected.
             bool: whether or not the ball has been found in the frame
         """
-
+        timestamp = aligned_frames.get_timestamp()
         rgb = aligned_frames.get_color_frame()
         depth = aligned_frames.get_depth_frame()
         depth_image = np.asarray(depth.get_data(), dtype=np.uint8)
@@ -288,8 +288,9 @@ class Camera:
         if RBGD_frames is None:
             print("Failed to capture image")
             return None
-
-        
+        timestamp = RBGD_frames.get_timestamp()
+        # print("timestamp: ", timestamp, "timestamp type: ", type(timestamp))
+        # print(time.time())
         # Obtain Ball XYZ from RGBD frame and
         XYZ, ball_found = self.image_processing(RBGD_frames)
     
@@ -302,7 +303,7 @@ class Camera:
         #     high=np.array([0.40, 0.10, 0.45], dtype=np.float64),
         # )
         # print("ball position in Robot Coordinates: ", XYZ)
-        return XYZ, ball_found
+        return XYZ, ball_found, timestamp
     
     def show_image(self):
         cv2.waitKey(1) # wait 1 ms. needed to display video feed
@@ -602,10 +603,11 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         circ_score = 350.0 * circ
         solid_score = 250.0 * solid
         aspect_score = -60.0 * aspect
-        color_score = -90.0 * hue_diff
+        # color_score = -90.0 * hue_diff
+        color_score = 0.0  # disable color score for now since it seems to hurt more than help; tune weight and thresholds if re-enabling
 
 
-        score = dist_score + circ_score + solid_score + aspect_score#+ color_score
+        score = dist_score + circ_score + solid_score + aspect_score+ color_score
 
         if best is None or (score > best["score"]):
             best = dict(score=score, cx=cx, cy=cy, hull=hull, bbox=(x, y, w, h), score_parts=(dist_score, area_score, circ_score, solid_score, aspect_score, color_score))
