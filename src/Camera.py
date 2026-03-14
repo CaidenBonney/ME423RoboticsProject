@@ -24,7 +24,8 @@ class Camera:
         self.dist_coeffs = None
         self.R_m_c = None
         self.t_m_c = None
-        self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, 0.05332], [0, -1, 0, -0.10954], [0, 0, 0, 1]], dtype=np.float64) 
+        self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, -0.1], [0, -1, 0, 0.010], [0, 0, 0, 1]], dtype=np.float64)
+        # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, 0.05332], [0, -1, 0, -0.10954], [0, 0, 0, 1]], dtype=np.float64) 
         self.current_frame = np.zeros((640, 480, 3), dtype=np.uint8)
         self.cam_setup()
 
@@ -239,12 +240,13 @@ class Camera:
         """ Transform from camera frame to robot frame """
 
         P_ball_marker = (self.R_m_c @ P_ball_cam) + self.t_m_c
-
+        # xR, yR, zR = P_ball_marker.tolist()
+        # return xR, yR, zR
         # Make ball into 4x1 vector
-        P_ball_marker_h = np.append(P_ball_marker, 1.0)
+        P_ball_marker_h = np.append(P_ball_marker, 1.0).reshape(4, 1)
         # Transform to base frame
         P_ball_base_h = self.Base_ArUco_Transformation @ P_ball_marker_h
-        xR, yR, zR = P_ball_base_h[:3].tolist()
+        xR, yR, zR = P_ball_base_h[:3, 0]
         return xR, yR, zR
 
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
