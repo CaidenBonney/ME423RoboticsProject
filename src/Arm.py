@@ -39,7 +39,7 @@ class Arm:
         self.traj = Trajectory() # initialize empty trajectory
         self.missed_frames = 0 # count the number of frames since the ball was last seen
         self.missed_frames_max = 10
-        self.prev_phi_cmd = None
+        self.prev_phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)
 
         # transformation matrix from end-effector frame to base frame adjusted in qarm_forward_kinematics
         self.T04 = np.identity(4, dtype=np.float64)
@@ -59,8 +59,9 @@ class Arm:
             if self.missed_frames == self.missed_frames_max:
                 print("Creating new trajectory object, lost tracking")
                 self.traj = Trajectory()
-                return self.prev_phi_cmd
+            return self.prev_phi_cmd
         # Convert input to a clean (3,) float vector; reject NaN/Inf early.
+        self.missed_frames = 0
         xyz_meas = np.asarray(XYZ, dtype=np.float64).reshape(3)
         if not np.all(np.isfinite(xyz_meas)):
             raise ValueError("XYZ command contains NaN/Inf values.")

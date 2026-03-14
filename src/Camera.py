@@ -54,6 +54,7 @@ class Camera:
         self.v: Optional[int] = None
         self.z: Optional[float] = None
         self.score = None
+        self.score_parts = None
         self.rvec_draw = None
         self.tvec_draw = None
         self.R_m_c = None
@@ -221,7 +222,7 @@ class Camera:
         gc.collect()
     pass
 
-    def image_processing(self, aligned_frames: rs.align) -> np.ndarray:
+    def image_processing(self, aligned_frames: rs.align) -> tuple[np.ndarray, bool]:
         """Process the aligned RGBD frames and return the ball position in camera coordinates.
         Args:
             aligned_frames (rs.align): The aligned RGBD frames.
@@ -246,6 +247,7 @@ class Camera:
             # print("BALL DETECTED ...")
             self.u, self.v, best = ball_info
             self.score = best["score"]
+            self.score_parts = best["score_parts"]
             cv2.circle(self.current_frame, (self.u, self.v), 5, (255, 0, 0), -1)
             cv2.drawContours(self.current_frame, [best["hull"]], -1, (0, 255, 0), 2)
             
@@ -258,12 +260,12 @@ class Camera:
                 # Transform from camera frame to robot base frame
                 xR, yR, zR = self.Transform_Camera_to_Robot_Base(P_ball_cam)
 
-                return np.asarray([xR, yR, zR], dtype=np.float64)
+                return (np.asarray([xR, yR, zR], dtype=np.float64), found_ball)
             # else:
             #     print("Invalid depth for ball ...")
         # else:
         #     print("BALL NOT DETECTED ...")
-        return np.asarray([0, 0, 0], dtype=np.float64), found_ball
+        return (np.asarray([0, 0, 0], dtype=np.float64), found_ball)
 
     def Transform_Camera_to_Robot_Base(self, P_ball_cam):
         """ Transform from camera frame to robot frame """
@@ -284,6 +286,7 @@ class Camera:
         # Grab the latest RGBD frames
         RBGD_frames = self.capture_image()
         if RBGD_frames is None:
+            print("Failed to capture image")
             return None
 
         
@@ -328,9 +331,12 @@ def robust_depth_at_pixel(depth_frame, u: int, v: int, radius: int) -> float:
     for dv in range(-radius, radius + 1):
         for du in range(-radius, radius + 1):
             uu, vv = u + du, v + dv
-            z = float(depth_frame.get_distance(uu, vv))
-            if z > 0:
-                vals.append(z)
+            try:
+                z = float(depth_frame.get_distance(uu, vv))
+                if z > 0:
+                    vals.append(z)
+            except:
+                pass
     if not vals:
         return 0.0
     return float(np.median(vals))
@@ -529,6 +535,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
     elif ball_color == GREEN_BALL_COLOR:
         lower_green = (65, 50, 40)
         upper_green = (90, 255, 255)
+        mean_green = (92, 78, 117)  # mean HSV of green ball samples
         using_bg_sub = True # bg sub seems to hurt green ball detection, so disable for green ball
         color_mask = cv2.inRange(hsv, lower_green, upper_green)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
@@ -550,6 +557,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
 
     pred = None
     if len(last_pts) >= 2:
+        print("len(last_pts): ", len(last_pts))
         (x1, y1), (x2, y2) = last_pts[-2], last_pts[-1]
         pred = (x2 + (x2 - x1), y2 + (y2 - y1))
     elif len(last_pts) == 1:
@@ -570,6 +578,9 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         hull_area = cv2.contourArea(hull)
         solid = (area / hull_area) if hull_area > 0 else 0.0
 
+        mean_hue, _ = mean_hue_in_hull(frame_bgr, hull)
+        hue_diff = abs(mean_hue - mean_green[0])
+
         x, y, w, h = cv2.boundingRect(c)
         aspect = max(w / max(1, h), h / max(1, w))
 
@@ -586,10 +597,18 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         if pred is not None:
             dist_pred = math.hypot(cx - pred[0], cy - pred[1])
 
-        score = (-5.0 * dist_pred) + (0.25 * area) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
+        dist_score = -40.0 * dist_pred
+        area_score = 0.25 * area
+        circ_score = 350.0 * circ
+        solid_score = 250.0 * solid
+        aspect_score = -60.0 * aspect
+        color_score = -90.0 * hue_diff
 
-        if best is None or (score > best["score"] and score > 350):
-            best = dict(score=score, cx=cx, cy=cy, hull=hull, bbox=(x, y, w, h))
+
+        score = dist_score + circ_score + solid_score + aspect_score#+ color_score
+
+        if best is None or (score > best["score"]):
+            best = dict(score=score, cx=cx, cy=cy, hull=hull, bbox=(x, y, w, h), score_parts=(dist_score, area_score, circ_score, solid_score, aspect_score, color_score))
 
     if best is None:
         return False, None, dict(mask=mask)
@@ -619,3 +638,47 @@ def load_calibration(path):
         dist_coeffs = fs.getNode("distCoeffs").mat()
 
     return camera_matrix, dist_coeffs
+
+def mean_hue_in_hull(frame_bgr, hull):
+    """
+    Compute the circular mean hue inside an OpenCV convex hull.
+
+    Args:
+        frame_bgr: HxWx3 uint8 BGR image
+        hull: OpenCV convex hull, shape Nx1x2 or Nx2
+
+    Returns:
+        mean_hue_opencv: float in [0, 180)
+        valid_pixel_count: int
+    """
+    import cv2
+    import numpy as np
+
+    # Convert to HSV
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+    hue = hsv[:, :, 0].astype(np.float32)   # OpenCV hue: 0..179
+
+    # Build a binary mask for the hull
+    mask = np.zeros(frame_bgr.shape[:2], dtype=np.uint8)
+    cv2.fillConvexPoly(mask, hull, 255)
+
+    # Extract hue pixels inside hull
+    hue_pixels = hue[mask > 0]
+    if hue_pixels.size == 0:
+        return None, 0
+
+    # Convert OpenCV hue [0,179] to angle [0,2pi)
+    angles = hue_pixels * (2.0 * np.pi / 180.0)
+
+    # Circular mean
+    mean_sin = np.mean(np.sin(angles))
+    mean_cos = np.mean(np.cos(angles))
+
+    mean_angle = np.arctan2(mean_sin, mean_cos)
+    if mean_angle < 0:
+        mean_angle += 2.0 * np.pi
+
+    # Convert back to OpenCV hue range [0,180)
+    mean_hue_opencv = mean_angle * (180.0 / (2.0 * np.pi))
+
+    return float(mean_hue_opencv), int(hue_pixels.size)

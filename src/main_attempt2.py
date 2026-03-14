@@ -21,11 +21,11 @@ def camera_worker(
 
         if ballXYZ is None:
             continue
-
+        
         try:
             if ballXYZ_queue.full():
                 ballXYZ_queue.get_nowait()
-            ballXYZ_queue.put_nowait(ballXYZ)
+            ballXYZ_queue.put_nowait((ballXYZ, ball_found))
         except queue.Empty:
             pass
 
@@ -47,7 +47,7 @@ def arm_worker(
         if ballXYZ_queue.empty():
             continue
 
-        ballXYZ = ballXYZ_queue.get_nowait()
+        ballXYZ, ball_found = ballXYZ_queue.get_nowait()
 
         try:
             arm_frame = cam.current_frame.copy()
@@ -135,7 +135,36 @@ def main() -> None:
                     (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.6,
-                    (0, 255, 255),
+                    (0, 0, 0),
+                    2,
+                    cv2.LINE_AA,
+                )
+                cv2.putText(
+                    cam_frame,
+                    # f"distance {cam.score_parts[0]:.3f}, area {cam.score_parts[1]:.3f}, circularity {cam.score_parts[2]:.3f}, solidity {cam.score_parts[3]:.3f}, aspect {cam.score_parts[4]:.3f}, color {cam.score_parts[5]:.3f}",
+                    f"circularity {cam.score_parts[2]:.3f}, solidity {cam.score_parts[3]:.3f}, aspect {cam.score_parts[4]:.3f}, color {cam.score_parts[5]:.3f}",
+                    (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (0, 0, 0),
+                    2,
+                    cv2.LINE_AA,
+                )
+
+                # dist_score = -40.0 * dist_pred
+                # area_score = 0.25 * area
+                # circ_score = 350.0 * circ
+                # solid_score = 250.0 * solid
+                # aspect_score = -60.0 * aspect
+
+                cv2.putText(
+                    cam_frame,
+                    # f"distance {cam.score_parts[0]/-40.0:.3f}, area {cam.score_parts[1]/0.25:.3f}, circularity {cam.score_parts[2]/350.0:.3f}, solidity {cam.score_parts[3]/250.0:.3f}, aspect {cam.score_parts[4]/-60.0:.3f}, color {cam.score_parts[5]/-90.0:.3f} ",
+                    f"circularity {cam.score_parts[2]/350.0:.3f}, solidity {cam.score_parts[3]/250.0:.3f}, aspect {cam.score_parts[4]/-60.0:.3f}, color {cam.score_parts[5]/-90.0:.3f} ",
+                    (10, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (0, 0, 0),
                     2,
                     cv2.LINE_AA,
                 )
