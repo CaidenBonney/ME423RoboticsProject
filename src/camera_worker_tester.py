@@ -14,7 +14,6 @@ cam = Camera()
 # window_name = "camera_pov"
 # window = cv2.namedWindow(window_name, cv2.WINDOW_FREERATIO)
 # cv2.imshow(window_name, cam.current_frame)
-cam.show_image()
 while True:
     start = cam.elapsed_time()
     ballXYZ = cam.capture_and_process()
@@ -27,6 +26,7 @@ while True:
 
     # Only publish if the camera produced a valid command
     try:
+        
         cv2.waitKey(1) # wait 1 ms. needed to display video feed
         if ballXYZ_queue.full():
             ballXYZ_queue.get_nowait()

@@ -7,6 +7,29 @@ import cv2
 import pyrealsense2 as rs
 import math
 
+# ---------------- USER CONFIG ----------------
+MARKER_ID = 67
+# MARKER_LENGTH_M = 0.07 
+MARKER_LENGTH_M = 0.1889  # marker side length in meters (0.1889 m = 7.437 inches)
+ARUCO_DICT = cv2.aruco.DICT_4X4_250
+
+W, H, FPS = 640, 480, 30
+
+NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
+BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
+MIN_VALID_CORNERS = 3
+
+# Ball detector thresholds (tune if needed)
+S_HIGH = 70
+V_LOW = 185
+AREA_MIN = 80
+AREA_MAX = 12000
+CIRC_MIN = 0.25
+SOLID_MIN = 0.40
+ASPECT_MAX = 1.8
+WARMUP_FRAMES = 30
+
+CALIBRATION_FILE = "camera_calib.yml"
 
 class Camera:
     def __init__(self) -> None:
@@ -22,9 +45,13 @@ class Camera:
         self.cameraPortID = 3  # This number may be different for every machine. It corresponds to the port that the camera is attached to
         self.camera_matrix = None
         self.dist_coeffs = None
+        self.rvec_draw = None
+        self.tvec_draw = None
         self.R_m_c = None
         self.t_m_c = None
-        self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, -0.1], [0, -1, 0, 0.010], [0, 0, 0, 1]], dtype=np.float64)
+        self.Base_ArUco_Transformation = np.array([[1, 0, 0, 0.622], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
+        # self.Base_ArUco_Transformation = np.array([[1, 0, 0, 0.402], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
+        # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, -0.1], [0, -1, 0, 0.010], [0, 0, 0, 1]], dtype=np.float64)
         # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, 0.05332], [0, -1, 0, -0.10954], [0, 0, 0, 1]], dtype=np.float64) 
         self.current_frame = np.zeros((640, 480, 3), dtype=np.uint8)
         self.cam_setup()
@@ -63,8 +90,7 @@ class Camera:
         self.cam_calibration()
 
     def cam_calibration(self, path: str = "camera_calib.yml") -> None:
-        self.camera_matrix = np.array(([800, 0, 320], [0, 800, 240], [0, 0, 1]), dtype=np.float32)
-        self.dist_coeffs = np.zeros((5, 1), dtype=np.float32)
+        self.camera_matrix, self.dist_coeffs = load_calibration(CALIBRATION_FILE)
         print("SOLVING ROBOT TRANSFORMATION ...")
         self.get_robot_transformation()
         print("ROBOT TRANSFORMATION SOLVED...")
@@ -72,15 +98,6 @@ class Camera:
         print("BACKGROUND MODEL CREATED...")
 
     def get_robot_transformation(self) -> np.ndarray:
-        MARKER_ID = 67
-        MARKER_LENGTH_M = 0.07
-        ARUCO_DICT = cv2.aruco.DICT_4X4_250
-
-        W, H, FPS = 640, 480, 30
-
-        NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
-        BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
-        MIN_VALID_CORNERS = 3
 
         marker_found = False
         while not marker_found:
@@ -119,7 +136,8 @@ class Camera:
                 t_c_m = -R_c_m @ t_m_c
                 # rvec_draw, _ = cv2.Rodrigues(R_c_m)
                 # tvec_draw = t_c_m.reshape(3, 1)
-                # cv2.drawFrameAxes(vis, K, dist, rvec_draw, tvec_draw, MARKER_LENGTH_M * 0.75)
+                # self.rvec_draw = rvec_draw
+                # self.tvec_draw = tvec_draw
                 self.R_m_c = R_m_c
                 self.t_m_c = t_m_c
                 self.robotTransformation = build_T(R_m_c, t_m_c)
@@ -273,31 +291,8 @@ class Camera:
         return XYZ
     
     def show_image(self):
-        cv2.waitKey(1) # wait 0.1 ms. needed to display video feed
+        cv2.waitKey(1) # wait 1 ms. needed to display video feed
         cv2.imshow("camera_pov", self.current_frame)
-
-
-# ---------------- USER CONFIG ----------------
-MARKER_ID = 67
-MARKER_LENGTH_M = 0.07
-ARUCO_DICT = cv2.aruco.DICT_4X4_250
-
-W, H, FPS = 640, 480, 30
-
-NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
-BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
-MIN_VALID_CORNERS = 3
-
-# Ball detector thresholds (tune if needed)
-S_HIGH = 70
-V_LOW = 185
-AREA_MIN = 80
-AREA_MAX = 12000
-CIRC_MIN = 0.25
-SOLID_MIN = 0.40
-ASPECT_MAX = 1.8
-
-WARMUP_FRAMES = 30
 
 
 # ---------------- MARKER MODEL ----------------
@@ -556,3 +551,23 @@ def detect_ball_center(frame_bgr, bs, last_pts):
     if len(last_pts) > 10:
         last_pts[:] = last_pts[-10:]
     return True, (u, v, best), dict(mask=mask)
+
+def load_calibration(path):
+    fs = cv2.FileStorage(path, cv2.FILE_STORAGE_READ)
+    if not fs.isOpened():
+        raise FileNotFoundError("Could not open calibration file")
+
+    camera_matrix = fs.getNode("camera_matrix").mat()
+    # camera_matrix = np.array(([800, 0, 320], [0, 800, 240],[0, 0, 1]), dtype=np.float32)
+    # dist_coeffs = np.zeros((5, 1), dtype=np.float32)
+
+    dist_coeffs = fs.getNode("distortion_coefficients").mat()
+
+    fs.release()
+
+    if camera_matrix is None:
+        camera_matrix = fs.getNode("cameraMatrix").mat()
+    if dist_coeffs is None:
+        dist_coeffs = fs.getNode("distCoeffs").mat()
+
+    return camera_matrix, dist_coeffs
