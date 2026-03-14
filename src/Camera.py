@@ -151,7 +151,7 @@ class Camera:
     def create_background_model(
         self,
         warm_up_video_path: str = "src/videos/warmup_video.mp4",
-        warmup_frames: int = 60,
+        warmup_frames: int = 45,
         fps: int = 60,
         W: int = 640,
         H: int = 480,

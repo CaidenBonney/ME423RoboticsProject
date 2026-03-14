@@ -208,3 +208,4 @@ __marimo__/
 .python-version
 .vscode/settings.json
 .DS_Store
+src/videos/warmup_video.mp4

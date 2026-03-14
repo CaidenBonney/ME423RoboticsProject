@@ -36,7 +36,7 @@ class Arm:
         self._q_write_idx = 0
         self._q_count = 0
 
-        self.traj = Trajectory(np.zeros(2), np.zeros(2), np.zeros(3), self.startTime, None, None) # initialize empty trajectory
+        self.traj = Trajectory() # initialize empty trajectory
 
         # transformation matrix from end-effector frame to base frame adjusted in qarm_forward_kinematics
         self.T04 = np.identity(4, dtype=np.float64)
