@@ -40,7 +40,7 @@ ASPECT_MAX = 1.8
 
 WARMUP_FRAMES = 30
 
-def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COLOR):
+def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COLOR, using_bg_sub: bool = True):
     """ Detects the ball center in the frame using the frame, background subtractor and last detected points.
     
     Args:
@@ -53,8 +53,6 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
       (found: Boolean, Optional[(u,v, best: dict)], "dict(mask=mask)") """
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
     k5 = np.ones((5, 5), np.uint8)
-    k3 = np.ones((3, 3), np.uint8)
-    
     # select ball color
     if ball_color == WHITE_BALL_COLOR:
         color_mask = cv2.inRange(hsv, (0, 0, V_LOW), (179, S_HIGH, 255))
@@ -85,8 +83,8 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
     elif ball_color == GREEN_BALL_COLOR:
         # Green mask (covers the usual green hue range; tune if needed)
-        lower_green = (92, 110, 120)
-        upper_green = (113, 255, 255)
+        # lower_green = (92, 110, 120)
+        # upper_green = (113, 255, 255)
 
         # More "robust" for changing lighting
         # lower_green = (38, 90, 100)
@@ -95,6 +93,9 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         # sc of green ball
         # lower_green = (70, 140, 120)
         # upper_green = (82, 255, 255)
+        lower_green = (70, 50, 120)
+        upper_green = (82, 255, 255)
+        using_bg_sub = False # bg sub seems to hurt green ball detection, so disable for green ball
 
         # sc of ball: robust for lighting
         # lower_green = (68, 120, 100)
@@ -106,11 +107,16 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
     else:
         raise ValueError(f"Invalid ball color: {ball_color}")
 
-    fg = bs.apply(frame_bgr, learningRate=0.002)
-    fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, k3, iterations=1)
-    fg = cv2.dilate(fg, k5, iterations=1)
+    if using_bg_sub:
+        k3 = np.ones((3, 3), np.uint8)
 
-    mask = cv2.bitwise_and(fg, color_mask)
+        fg = bs.apply(frame_bgr, learningRate=0.002)
+        fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, k3, iterations=1)
+        fg = cv2.dilate(fg, k5, iterations=1)
+        mask = cv2.bitwise_and(fg, color_mask)
+    else:
+        mask = color_mask
+        
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     pred = None
@@ -151,7 +157,9 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         if pred is not None:
             dist_pred = math.hypot(cx - pred[0], cy - pred[1])
 
-        score = (-2.0 * dist_pred) + (0.25 * area) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
+        # score = (-2.0 * dist_pred) + (0.25 * area) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
+        score = (-2.0 * dist_pred) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
+
 
         if best is None or score > best["score"]:
             best = dict(score=score, cx=cx, cy=cy, hull=hull, bbox=(x, y, w, h))
