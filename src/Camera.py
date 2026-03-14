@@ -27,7 +27,7 @@ GREEN_BALL_COLOR = 2
 # White mask values
 S_HIGH = 70
 V_LOW = 185
-AREA_MIN = 80
+AREA_MIN = 4
 AREA_MAX = 12000
 CIRC_MIN = 0.25
 SOLID_MIN = 0.40
@@ -240,7 +240,7 @@ class Camera:
         # print("current frame set in camera object...")
         last_pts = []
         # 2) ball detection
-        found_ball, ball_info, mask = detect_ball_center(frame, self.bs, last_pts, ball_color=WHITE_BALL_COLOR)
+        found_ball, ball_info, mask = detect_ball_center(frame, self.bs, last_pts, ball_color=GREEN_BALL_COLOR)
         if found_ball:
             # print("BALL DETECTED ...")
             self.u, self.v, best = ball_info
@@ -484,20 +484,19 @@ def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictio
     return True, R_marker_from_cam, t_marker_from_cam, method, all_corners, ids
 
 
-def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COLOR):
+def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COLOR, using_bg_sub: bool = True):
     """ Detects the ball center in the frame using the frame, background subtractor and last detected points.
     
     Args:
         frame_bgr (np.ndarray): The frame to detect the ball center in.
         bs (cv2.BackgroundSubtractorMOG2): The background subtractor to use.
         last_pts (list): The last detected points.
+        ball_color (int): The color of the ball to detect. Use the constants WHITE_BALL_COLOR, ORANGE_BALL_COLOR, or GREEN_BALL_COLOR.
 
     Returns:
       (found: Boolean, Optional[(u,v, best: dict)], "dict(mask=mask)") """
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
     k5 = np.ones((5, 5), np.uint8)
-    k3 = np.ones((3, 3), np.uint8)
-    
     # select ball color
     if ball_color == WHITE_BALL_COLOR:
         color_mask = cv2.inRange(hsv, (0, 0, V_LOW), (179, S_HIGH, 255))
@@ -527,33 +526,25 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
     elif ball_color == GREEN_BALL_COLOR:
-        # Green mask (covers the usual green hue range; tune if needed)
-        lower_green = (92, 110, 120)
-        upper_green = (113, 255, 255)
-
-        # More "robust" for changing lighting
-        # lower_green = (38, 90, 100)
-        # upper_green = (65, 255, 255)
-
-        # sc of green ball
-        # lower_green = (70, 140, 120)
-        # upper_green = (82, 255, 255)
-
-        # sc of ball: robust for lighting
-        # lower_green = (68, 120, 100)
-        # upper_green = (84, 255, 255)
-
+        lower_green = (65, 50, 40)
+        upper_green = (90, 255, 255)
+        using_bg_sub = True # bg sub seems to hurt green ball detection, so disable for green ball
         color_mask = cv2.inRange(hsv, lower_green, upper_green)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
-    
-    
+    else:
+        raise ValueError(f"Invalid ball color: {ball_color}")
 
-    fg = bs.apply(frame_bgr, learningRate=0.002)
-    fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, k3, iterations=1)
-    fg = cv2.dilate(fg, k5, iterations=1)
+    if using_bg_sub:
+        k3 = np.ones((3, 3), np.uint8)
 
-    mask = cv2.bitwise_and(fg, color_mask)
+        fg = bs.apply(frame_bgr, learningRate=0.002)
+        fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, k3, iterations=1)
+        fg = cv2.dilate(fg, k5, iterations=1)
+        mask = cv2.bitwise_and(fg, color_mask)
+    else:
+        mask = color_mask
+
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     pred = None
@@ -594,7 +585,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         if pred is not None:
             dist_pred = math.hypot(cx - pred[0], cy - pred[1])
 
-        score = (-2.0 * dist_pred) + (0.25 * area) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
+        score = (-5.0 * dist_pred) + (0.25 * area) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
 
         if best is None or (score > best["score"] and score > 350):
             best = dict(score=score, cx=cx, cy=cy, hull=hull, bbox=(x, y, w, h))

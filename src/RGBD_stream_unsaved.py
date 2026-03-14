@@ -32,7 +32,7 @@ GREEN_BALL_COLOR = 2
 # Ball detector thresholds (tune if needed)
 S_HIGH = 70
 V_LOW = 185
-AREA_MIN = 80
+AREA_MIN = 0
 AREA_MAX = 12000
 CIRC_MIN = 0.25
 SOLID_MIN = 0.40
@@ -93,9 +93,9 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         # sc of green ball
         # lower_green = (70, 140, 120)
         # upper_green = (82, 255, 255)
-        lower_green = (70, 50, 120)
-        upper_green = (82, 255, 255)
-        using_bg_sub = False # bg sub seems to hurt green ball detection, so disable for green ball
+        lower_green = (65, 50, 40)
+        upper_green = (90, 255, 255)
+        using_bg_sub = True # bg sub seems to hurt green ball detection, so disable for green ball
 
         # sc of ball: robust for lighting
         # lower_green = (68, 120, 100)
@@ -158,7 +158,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
             dist_pred = math.hypot(cx - pred[0], cy - pred[1])
 
         # score = (-2.0 * dist_pred) + (0.25 * area) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
-        score = (-2.0 * dist_pred) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
+        score = (-5.0 * dist_pred) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
 
 
         if best is None or score > best["score"]:
