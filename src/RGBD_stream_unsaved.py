@@ -13,6 +13,120 @@ import time
 import math
 import os
 
+# ---------------- USER CONFIG ----------------
+MARKER_ID = 67
+MARKER_LENGTH_M = 0.07
+ARUCO_DICT = cv2.aruco.DICT_4X4_250
+
+W, H, FPS = 640, 480, 30
+
+NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
+BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
+MIN_VALID_CORNERS = 3
+
+# Ball detector thresholds (tune if needed)
+S_HIGH = 70
+V_LOW = 185
+AREA_MIN = 80
+AREA_MAX = 12000
+CIRC_MIN = 0.25
+SOLID_MIN = 0.40
+ASPECT_MAX = 1.8
+
+WARMUP_FRAMES = 30
+
+def detect_ball_center(frame_bgr, bs, last_pts):
+    """ Detects the ball center in the frame using the frame, background subtractor and last detected points.
+    Assumes the ball is white and moving. 
+    
+    Args:
+        frame_bgr (np.ndarray): The frame to detect the ball center in.
+        bs (cv2.BackgroundSubtractorMOG2): The background subtractor to use.
+        last_pts (list): The last detected points.
+
+    Returns:
+      (found: Boolean, Optional[(u,v)], "dict(mask=mask)") """
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+
+    white = cv2.inRange(hsv, (0, 0, V_LOW), (179, S_HIGH, 255))
+    k5 = np.ones((5, 5), np.uint8)
+    k3 = np.ones((3, 3), np.uint8)
+    white = cv2.morphologyEx(white, cv2.MORPH_OPEN, k5, iterations=1)
+    white = cv2.morphologyEx(white, cv2.MORPH_CLOSE, k5, iterations=2)
+
+    fg = bs.apply(frame_bgr, learningRate=0.002)
+    fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, k3, iterations=1)
+    fg = cv2.dilate(fg, k5, iterations=1)
+
+    mask = cv2.bitwise_and(white, fg)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    pred = None
+    if len(last_pts) >= 2:
+        (x1, y1), (x2, y2) = last_pts[-2], last_pts[-1]
+        pred = (x2 + (x2 - x1), y2 + (y2 - y1))
+    elif len(last_pts) == 1:
+        pred = last_pts[-1]
+
+    best = None
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area < AREA_MIN or area > AREA_MAX:
+            continue
+
+        peri = cv2.arcLength(c, True)
+        if peri <= 0:
+            continue
+        circ = 4 * math.pi * area / (peri * peri)
+
+        hull = cv2.convexHull(c)
+        hull_area = cv2.contourArea(hull)
+        solid = (area / hull_area) if hull_area > 0 else 0.0
+
+        x, y, w, h = cv2.boundingRect(c)
+        aspect = max(w / max(1, h), h / max(1, w))
+
+        if circ < CIRC_MIN or solid < SOLID_MIN or aspect > ASPECT_MAX:
+            continue
+
+        M = cv2.moments(c)
+        if M["m00"] == 0:
+            continue
+        cx = M["m10"] / M["m00"]
+        cy = M["m01"] / M["m00"]
+
+        dist_pred = 0.0
+        if pred is not None:
+            dist_pred = math.hypot(cx - pred[0], cy - pred[1])
+
+        score = (-2.0 * dist_pred) + (0.25 * area) + (350.0 * circ) + (250.0 * solid) - (60.0 * aspect)
+
+        if best is None or score > best["score"]:
+            best = dict(score=score, cx=cx, cy=cy, hull=hull, bbox=(x, y, w, h))
+
+    if best is None:
+        return False, None, dict(mask=mask)
+
+    u, v = int(round(best["cx"])), int(round(best["cy"]))
+    last_pts.append((best["cx"], best["cy"]))
+    if len(last_pts) > 10:
+        last_pts[:] = last_pts[-10:]
+    return True, (u, v, best), dict(mask=mask)
+
+def robust_depth_at_pixel(depth_frame, u: int, v: int, radius: int) -> float:
+    if radius <= 0:
+        return float(depth_frame.get_distance(u, v))
+    vals = []
+    for dv in range(-radius, radius + 1):
+        for du in range(-radius, radius + 1):
+            uu, vv = u + du, v + dv
+            z = float(depth_frame.get_distance(uu, vv))
+            if z > 0:
+                vals.append(z)
+    if not vals:
+        return 0.0
+    return float(np.median(vals))
+
 # show code is running
 print("RUNNING...")
 warmup_frames = 30
@@ -121,148 +235,21 @@ try:
         if rgb_frames and depth_frames:
             rgb_timestamp = time.time()
             depth_timestamp = time.time()
-            rgb = rgb_frames#.get_color_frame()
-            rgb_timestamp = rgb_frames.get_timestamp()
-            rgb_image = np.asanyarray(rgb.get_data())
-            # handle depth pipeline
-            depth = depth_frames#.get_depth_frame()
-            depth_timestamp = depth_frames.get_timestamp()
-            depth_data = depth.get_data()
-            # depth_image = np.asanyarray(depth.get_data())
-            depth_image = np.asarray(depth.get_data(), dtype=np.uint8)
-            depth_map = cv2.applyColorMap(depth_image, cv2.COLORMAP_JET)
-            frames_count += 1
-            # Our operations on the frame come here
+            frame = np.asanyarray(rgb_frames.get_data())
+            # print("Ball center: ", detect_ball_center(np.asarray(rgb_frames.get_data()), bs, last_pts))
+            found_ball, ball_info, mask = detect_ball_center(frame, bs, last_pts)
+            if found_ball:
+                print("BALL DETECTED ...")
+                u, v, best = ball_info
+                cv2.circle(frame, (u, v), 5, (255, 0, 0), -1)
+                cv2.drawContours(frame, [best["hull"]], -1, (0, 255, 0), 2)
 
-        
-            frame = rgb_image
-            # --- White mask (shaded region) ---
-            hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
-
-            # Hue doesn't matter for white; keep all hues
-            white = cv2.inRange(
-                hsv,
-                (0, 0, V_low),          # low S, high V
-                (179, S_high, 255)
-            )
-
-            # Clean up the mask (region-based approach)
-            white = cv2.morphologyEx(white, cv2.MORPH_OPEN, k5, iterations=1)
-            white = cv2.morphologyEx(white, cv2.MORPH_CLOSE, k5, iterations=2)
-
-            # --- Motion mask ---
-            fg = bs.apply(frame, learningRate=0.002)
-            fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, k3, iterations=1)
-            fg = cv2.dilate(fg, k5, iterations=1)
-
-            # Only keep pixels that are BOTH white AND moving
-            mask = cv2.bitwise_and(white, fg)
-
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            best = None
-
-            # prediction: constant velocity from last two points
-            pred = None
-            if len(last_pts) >= 2:
-                (x1, y1), (x2, y2) = last_pts[-2], last_pts[-1]
-                pred = (x2 + (x2 - x1), y2 + (y2 - y1))
-            elif len(last_pts) == 1:
-                pred = last_pts[-1]
-
-            for c in contours:
-                area = cv2.contourArea(c)
-                if area < area_min or area > area_max:
-                    continue
-
-                peri = cv2.arcLength(c, True)
-                if peri <= 0:
-                    continue
-
-                circularity = 4 * math.pi * area / (peri * peri)
-
-                hull = cv2.convexHull(c)
-                hull_area = cv2.contourArea(hull)
-                solidity = (area / hull_area) if hull_area > 0 else 0.0
-
-                x, y, w, h = cv2.boundingRect(c)
-                aspect = max(w / max(1, h), h / max(1, w))  # >= 1
-
-                if circularity < circularity_min:
-                    continue
-                if solidity < solidity_min:
-                    continue
-                if aspect > aspect_max:
-                    continue
-
-                M = cv2.moments(c)
-                if M["m00"] == 0:
-                    continue
-                cx = M["m10"] / M["m00"]
-                cy = M["m01"] / M["m00"]
-
-                dist = 0.0
-                if pred is not None:
-                    dist = math.hypot(cx - pred[0], cy - pred[1])
-
-                # Score: prefer near prediction + round + solid + reasonable area
-                score = (
-                    -2.0 * dist
-                    + 0.25 * area
-                    + 350.0 * circularity
-                    + 250.0 * solidity
-                    - 60.0 * aspect
-                )
-
-                if best is None or score > best["score"]:
-                    best = dict(
-                        score=score,
-                        cx=cx, cy=cy,
-                        area=area,
-                        circularity=circularity,
-                        solidity=solidity,
-                        aspect=aspect,
-                        hull=hull,
-                        bbox=(x, y, w, h),
-                    )
-            out = frame.copy()
-            if best is not None:
-                cx_pix, cy_pix = best["cx"], best["cy"]
-                depth_meters = depth.get_distance(int(cx_pix), int(cy_pix))
-                real_point = rs.rs2_deproject_pixel_to_point(intrinsics, [cx_pix, cy_pix], depth_meters)
-                print("Deprojected point (meters):", real_point)
-                print("Deprojected point type:", type(real_point))
-                last_pts.append((cx_pix, cy_pix))
-                if len(last_pts) > 10:
-                    last_pts = last_pts[-10:]
-
-                # draw hull + center
-                cv2.drawContours(out, [best["hull"]], -1, (0, 255, 0), 2)
-                cv2.circle(out, (int(cx_pix), int(cy_pix)), 4, (255, 0, 0), -1)
-
-                x, y, w, h = best["bbox"]
-                cv2.rectangle(out, (x, y), (x + w, y + h), (0, 255, 255), 2)
-                cv2.putText(out, f"area={int(best['area'])}", (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                cv2.putText(out, f"circ={best['circularity']:.2f} sol={best['solidity']:.2f} asp={best['aspect']:.2f}",
-                            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(out, f"x={best['circularity']:.2f} y={best['solidity']:.2f} z={best['aspect']:.2f}",
-                            (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-            #     records.append((frame_idx, cx, cy, best["area"], best["circularity"], best["solidity"], best["aspect"]))
-            # else:
-            #     records.append((frame_idx, np.nan, np.nan, 0, 0.0, 0.0, 0.0))
-
-            writer.write(out)
-            # frame_idx += 1
-
-            cap.release()
-            writer.release()
-
-            # display rgb and depth frames
-            cv2.imshow('rgb_cam', out)
-            cv2.imshow('depth_cam', depth_map)
-        # print(f"FRAME {frames_count} CAPTURED...{rgb_timestamp - start_time}")
+                z = robust_depth_at_pixel(depth_frames, u, v, BALL_DEPTH_RADIUS_PX)
+                print(f"Ball center (u,v): ({u}, {v}), depth: {z:.3f} m")
+            else:   
+                print("BALL NOT DETECTED ...")
+            point = np.asarray([0, 0, 0], dtype=np.float64)
+            cv2.imshow('rgb_cam', np.asanyarray(frame))
         if cv2.waitKey(1) == ord('q'):
             break
     exit(0)

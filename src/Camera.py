@@ -1,3 +1,4 @@
+import gc
 import os
 import time
 from typing import Optional
@@ -23,6 +24,7 @@ class Camera:
         self.dist_coeffs = None
         self.R_m_c = None
         self.t_m_c = None
+        self.current_frame = np.zeros((640, 480, 3), dtype=np.uint8)
         self.cam_setup()
 
     def elapsed_time(self) -> float:
@@ -32,7 +34,15 @@ class Camera:
         """ Captures an RGB and depth frame from the camera. 
         Images are aligned."""
         frames = self.pipeline.wait_for_frames()
-        return self.align.process(frames)
+        aligned_frames = self.align.process(frames)
+        rgb = aligned_frames.get_color_frame()
+        depth = aligned_frames.get_depth_frame()
+        depth_image = np.asarray(depth.get_data(), dtype=np.uint8)
+        frame = rgb.get_data()
+        frame = np.asanyarray(frame)
+        self.current_frame = np.asanyarray(frame,dtype=np.uint8)
+        # print("current frame set in camera object...")
+        return aligned_frames
 
     def cam_setup(self) -> None:
         # TODO: add camera initialization (device open, stream config, etc.).
@@ -94,10 +104,10 @@ class Camera:
             )
 
             if ids is not None:
-                cv2.aruco.drawDetectedMarkers(vis, all_corners, ids)
-                cv2.imshow("camera_to_marker", vis)
+                # cv2.aruco.drawDetectedMarkers(vis, all_corners, ids)
+                # cv2.imshow("camera_to_marker", vis)
                 print("ARUCO MARKER DETCTED ...")
-                cv2.waitKey(0)
+                # cv2.waitKey(0)
 
             if ok_pose:
                 print("Camera to marker pose found")
@@ -126,7 +136,8 @@ class Camera:
         W: int = 640,
         H: int = 480,
     ) -> None:
-        # TODO: add camera calibration logic (make rerunable).
+        
+        
         # update transformation from camera frame to robot frame, create background model for motion detection
         warmup_frames_count = 0
         if os.path.exists(warm_up_video_path):
@@ -137,10 +148,10 @@ class Camera:
                 print(f"Could not delete video {warm_up_video_path}: {e}")
         else:
             print(f"No existing video to delete at: {warm_up_video_path}")
-        # initialize background subtractor
-        cap = cv2.VideoCapture(
-            self.cameraPortID
-        )  # This number may be different for every machine. It corresponds to the port that the camera is attached to
+        # # initialize background subtractor
+        # cap = cv2.VideoCapture(
+        #     self.cameraPortID
+        # )  # This number may be different for every machine. It corresponds to the port that the camera is attached to
         writer = cv2.VideoWriter(
             warm_up_video_path,
             cv2.VideoWriter_fourcc(*"mp4v"),
@@ -148,20 +159,29 @@ class Camera:
             (W, H),
             True,
         )
-        # record warmup frames to video
+        # # record warmup frames to video
+        # while warmup_frames_count < warmup_frames:
+        #     ret, frame = cap.read()
+        #     if not ret:
+        #         print("failed to grab frame")
+        #         break
+        #     else:
+        #         writer.write(frame)
         while warmup_frames_count < warmup_frames:
-            ret, frame = cap.read()
-            if not ret:
-                print("failed to grab frame")
-                break
-            else:
-                writer.write(frame)
-                warmup_frames_count += 1
+            frames = self.pipeline.wait_for_frames()
+            aligned_frames = self.align.process(frames)
+            color = aligned_frames.get_color_frame()
+            if not color:
+                continue
+            frame = np.asanyarray(color.get_data())
+            writer.write(frame)
+            warmup_frames_count += 1
         writer.release()
-        cap.release()
+        # cap.release()
         # Background subtractor to remove static bright objects (like the screw)
         self.bs = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=25, detectShadows=False)
         # Warm up background model
+        cap = cv2.VideoCapture(warm_up_video_path)
         for i in range(warmup_frames):
             ret, frame = cap.read()
             if not ret:
@@ -169,7 +189,7 @@ class Camera:
             self.bs.apply(frame, learningRate=0.05)
         print("WARMED UP BACKGROUND MODEL...")
         cap.release()
-
+        gc.collect()
     pass
 
     def image_processing(self, aligned_frames: rs.align) -> np.ndarray:
@@ -187,13 +207,16 @@ class Camera:
         frame = rgb.get_data()
         frame = np.asanyarray(frame)
         vis = frame.copy()
+        # self.current_frame = np.asanyarray(frame.copy(),dtype=np.uint8)
+        # print("current frame set in camera object...")
         last_pts = []
         # 2) ball detection
         found_ball, ball_info, mask = detect_ball_center(frame, self.bs, last_pts)
         if found_ball:
+            # print("BALL DETECTED ...")
             u, v, best = ball_info
-            cv2.circle(vis, (u, v), 5, (255, 0, 0), -1)
-            # cv2.drawContours(vis, [best["hull"]], -1, (0, 255, 0), 2)
+            cv2.circle(self.current_frame, (u, v), 5, (255, 0, 0), -1)
+            cv2.drawContours(self.current_frame, [best["hull"]], -1, (0, 255, 0), 2)
             
             # cv2.imshow("ball", vis)
             
@@ -205,6 +228,11 @@ class Camera:
                 P_ball_marker = (self.R_m_c @ P_ball_cam) + self.t_m_c
                 xM, yM, zM = P_ball_marker.tolist()
                 return np.asarray([xM, yM, zM], dtype=np.float64)
+            # else:
+            #     print("Invalid depth for ball ...")
+        # else:
+        #     print("BALL NOT DETECTED ...")
+        return np.asarray([0, 0, 0], dtype=np.float64)
 
 
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
@@ -227,8 +255,12 @@ class Camera:
         #     low=np.array([0.50, -0.10, 0.55], dtype=np.float64),
         #     high=np.array([0.40, 0.10, 0.45], dtype=np.float64),
         # )
-        print("ball position in Robot Coordinates: ", XYZ)
+        # print("ball position in Robot Coordinates: ", XYZ)
         return XYZ
+    
+    def show_image(self):
+        cv2.waitKey(1) # wait 0.1 ms. needed to display video feed
+        cv2.imshow("camera_pov", self.current_frame)
 
 
 # ---------------- USER CONFIG ----------------
@@ -456,7 +488,7 @@ def detect_ball_center(frame_bgr, bs, last_pts):
     fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, k3, iterations=1)
     fg = cv2.dilate(fg, k5, iterations=1)
 
-    mask = cv2.bitwise_and(white, fg)
+    mask = cv2.bitwise_and(fg, white)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     pred = None
