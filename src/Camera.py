@@ -285,16 +285,16 @@ class Camera:
         xR, yR, zR = P_ball_base[:3, 0]
         return xR, yR, zR
     
-    def T_RobotBase_to_Camera(self, xR, yR, zR) -> tuple[int, int]:
+    def T_RobotBase_to_Camera(self, XYZR: np.ndarray) -> tuple[int, int]:
         """ Transform from Robot base frame to camera frame 
         
         Args:
-            xR, yR, zR (float): coordinates in robot base frame
+            XYZR (np.ndarray): 3x1 vector in robot base frame
         
         Returns:
             u, v, [int] """
         # turn 3x1 vector into 4x1 vector
-        P_ball_base = np.array([xR, yR, zR, 1.0], dtype=np.float64)
+        P_ball_base = np.append(XYZR, 1.0).reshape(4, 1)
 
         # Convert from robot base frame to ArUco frame
         if self.ArUco2Base_Transformation_inv is None:
@@ -305,9 +305,8 @@ class Camera:
         if self.T_cam2ArUco_inv is None:
             raise ValueError("T_cam2ArUco_inv is None")
         P_ball_cam = self.T_cam2ArUco_inv @ P_ball_ArUco
-
         # Project XYZ_cam to pixel coordinates
-        u, v = tuple(rs.rs2_project_point_to_pixel(self.intrinsics, [P_ball_cam[0], P_ball_cam[1], P_ball_cam[2]])) 
+        u, v = tuple(rs.rs2_project_point_to_pixel(self.intrinsics, [P_ball_cam[:3, 0].reshape(3,)[i] for i in range(3)])) 
         return (int(u), int(v))
     
 

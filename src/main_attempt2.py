@@ -42,7 +42,8 @@ def arm_worker(
 
     moved = False
     start = arm.elapsed_time()
-
+    future_points_drawn = 5
+    timestep = 0.25
     while not stop_event.is_set() and arm.myArm.status:
         if ballXYZ_queue.empty():
             continue
@@ -50,6 +51,7 @@ def arm_worker(
         ballXYZ, ball_found, timestamp = ballXYZ_queue.get_nowait()
 
         try:
+            
             arm_frame = cam.current_frame.copy()
 
             cv2.putText(
@@ -64,7 +66,26 @@ def arm_worker(
             )
 
             phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found, timestamp)
+            """
+            1) make empty of list of points
+            2) populate list of points with future trajectory preictions
+            3) convert points into pixel values
+            4) draw points on arm frame
+            """
 
+            points = np.zeros((future_points_drawn, 2),dtype=int)
+            for i in range(future_points_drawn):
+                points[i, :] = cam.T_RobotBase_to_Camera(arm.traj.predict_pos(timestamp + (i)*timestep))
+                cv2.drawMarker(
+                arm_frame,
+                (int(points[i, 0]), int(points[i, 1])),
+                (255, 255, 255),
+                cv2.MARKER_STAR,
+                10,
+                2
+            )
+                
+            
             cv2.putText(
                 arm_frame,
                 f"phi_cmd: [{phi_cmd[0]:.3f}, {phi_cmd[1]:.3f}, {phi_cmd[2]:.3f}, {phi_cmd[3]:.3f}]",
@@ -127,29 +148,29 @@ def main() -> None:
         while arm_thread.is_alive():
             cam_frame = cam.current_frame.copy()
 
-            if cam.u is not None and cam.v is not None and cam.z is not None:
-                cv2.circle(cam_frame, (cam.u, cam.v), 5, (255, 0, 0), -1)
-                cv2.putText(
-                    cam_frame,
-                    f"u, v, z, score: ({cam.u} [pix], {cam.v} [pix], {cam.z:.3f} [m], {cam.score:.3f})",
-                    (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (0, 0, 0),
-                    2,
-                    cv2.LINE_AA,
-                )
-                cv2.putText(
-                    cam_frame,
-                    # f"distance {cam.score_parts[0]:.3f}, area {cam.score_parts[1]:.3f}, circularity {cam.score_parts[2]:.3f}, solidity {cam.score_parts[3]:.3f}, aspect {cam.score_parts[4]:.3f}, color {cam.score_parts[5]:.3f}",
-                    f"circularity {cam.score_parts[2]:.3f}, solidity {cam.score_parts[3]:.3f}, aspect {cam.score_parts[4]:.3f}, color {cam.score_parts[5]:.3f}",
-                    (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.45,
-                    (0, 0, 0),
-                    2,
-                    cv2.LINE_AA,
-                )
+            # if cam.u is not None and cam.v is not None and cam.z is not None:
+                # cv2.circle(cam_frame, (cam.u, cam.v), 5, (255, 0, 0), -1)
+                # cv2.putText(
+                #     cam_frame,
+                #     f"u, v, z, score: ({cam.u} [pix], {cam.v} [pix], {cam.z:.3f} [m], {cam.score:.3f})",
+                #     (10, 30),
+                #     cv2.FONT_HERSHEY_SIMPLEX,
+                #     0.6,
+                #     (0, 0, 0),
+                #     2,
+                #     cv2.LINE_AA,
+                # )
+                # cv2.putText(
+                #     cam_frame,
+                #     # f"distance {cam.score_parts[0]:.3f}, area {cam.score_parts[1]:.3f}, circularity {cam.score_parts[2]:.3f}, solidity {cam.score_parts[3]:.3f}, aspect {cam.score_parts[4]:.3f}, color {cam.score_parts[5]:.3f}",
+                #     f"circularity {cam.score_parts[2]:.3f}, solidity {cam.score_parts[3]:.3f}, aspect {cam.score_parts[4]:.3f}, color {cam.score_parts[5]:.3f}",
+                #     (10, 60),
+                #     cv2.FONT_HERSHEY_SIMPLEX,
+                #     0.45,
+                #     (0, 0, 0),
+                #     2,
+                #     cv2.LINE_AA,
+                # )
 
                 # dist_score = -40.0 * dist_pred
                 # area_score = 0.25 * area
@@ -157,27 +178,19 @@ def main() -> None:
                 # solid_score = 250.0 * solid
                 # aspect_score = -60.0 * aspect
 
-                cv2.putText(
-                    cam_frame,
-                    # f"distance {cam.score_parts[0]/-40.0:.3f}, area {cam.score_parts[1]/0.25:.3f}, circularity {cam.score_parts[2]/350.0:.3f}, solidity {cam.score_parts[3]/250.0:.3f}, aspect {cam.score_parts[4]/-60.0:.3f}, color {cam.score_parts[5]/-90.0:.3f} ",
-                    f"circularity {cam.score_parts[2]/350.0:.3f}, solidity {cam.score_parts[3]/250.0:.3f}, aspect {cam.score_parts[4]/-60.0:.3f}, color {cam.score_parts[5]/-90.0:.3f} ",
-                    (10, 90),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.45,
-                    (0, 0, 0),
-                    2,
-                    cv2.LINE_AA,
-                )
+                # cv2.putText(
+                #     cam_frame,
+                #     # f"distance {cam.score_parts[0]/-40.0:.3f}, area {cam.score_parts[1]/0.25:.3f}, circularity {cam.score_parts[2]/350.0:.3f}, solidity {cam.score_parts[3]/250.0:.3f}, aspect {cam.score_parts[4]/-60.0:.3f}, color {cam.score_parts[5]/-90.0:.3f} ",
+                #     f"circularity {cam.score_parts[2]/350.0:.3f}, solidity {cam.score_parts[3]/250.0:.3f}, aspect {cam.score_parts[4]/-60.0:.3f}, color {cam.score_parts[5]/-90.0:.3f} ",
+                #     (10, 90),
+                #     cv2.FONT_HERSHEY_SIMPLEX,
+                #     0.45,
+                #     (0, 0, 0),
+                #     2,
+                #     cv2.LINE_AA,
+                # )
  
-            cv2.imshow("camera_pov", cam_frame)
-
-            """
-            1) make empty of list of points
-            2) populate list of points with future trajectory preictions
-            3) convert points into pixel values
-            4) draw points on arm frame
-            """
-
+            # cv2.imshow("camera_pov", cam_frame)
             arm_frame = arm_frame_shared["frame"]
             if arm_frame is not None:
                 cv2.imshow("arm_pov", arm_frame)
