@@ -285,7 +285,7 @@ class Camera:
         xR, yR, zR = P_ball_base[:3, 0]
         return xR, yR, zR
     
-    def T_RobotBase_to_Camera(self, xR, yR, zR):
+    def T_RobotBase_to_Camera(self, xR, yR, zR) -> tuple[int, int]:
         """ Transform from Robot base frame to camera frame 
         
         Args:
@@ -308,7 +308,7 @@ class Camera:
 
         # Project XYZ_cam to pixel coordinates
         u, v = tuple(rs.rs2_project_point_to_pixel(self.intrinsics, [P_ball_cam[0], P_ball_cam[1], P_ball_cam[2]])) 
-        return u, v
+        return (int(u), int(v))
     
 
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
