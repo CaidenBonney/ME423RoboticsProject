@@ -59,47 +59,16 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
     elif ball_color == ORANGE_BALL_COLOR:
-    # Orange mask (covers the usual orange hue range; tune if needed)
-        # lower_orange = (8, 160, 175)
-        # upper_orange = (12, 255, 255)
-        # lower_orange = (6, 120, 140)
-        # upper_orange = (16, 255, 255)
-        # lower_orange = (8, 150, 120)
-        # upper_orange = (18, 255, 255)
-
-        # Bright Indoor lighting
         lower_orange = (7, 160, 130)
         upper_orange = (18, 255, 255)
 
-        # "Normal" Indoor Lighting
-        # lower_orange = (7, 140, 110)
-        # upper_orange = (18, 255, 255)
-
-        # Dimmer lighting
-        # lower_orange = (6, 130, 90)
-        # upper_orange = (20, 255, 255)
         color_mask = cv2.inRange(hsv, lower_orange, upper_orange)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
     elif ball_color == GREEN_BALL_COLOR:
-        # Green mask (covers the usual green hue range; tune if needed)
-        # lower_green = (92, 110, 120)
-        # upper_green = (113, 255, 255)
-
-        # More "robust" for changing lighting
-        # lower_green = (38, 90, 100)
-        # upper_green = (65, 255, 255)
-
-        # sc of green ball
-        # lower_green = (70, 140, 120)
-        # upper_green = (82, 255, 255)
         lower_green = (70, 50, 40)
         upper_green = (90, 255, 255)
         using_bg_sub = True # bg sub seems to hurt green ball detection, so disable for green ball
-
-        # sc of ball: robust for lighting
-        # lower_green = (68, 120, 100)
-        # upper_green = (84, 255, 255)
 
         color_mask = cv2.inRange(hsv, lower_green, upper_green)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)

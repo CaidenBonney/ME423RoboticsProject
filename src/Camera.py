@@ -13,7 +13,7 @@ MARKER_ID = 67
 MARKER_LENGTH_M = 0.1889  # marker side length in meters (0.1889 m = 7.437 inches)
 ARUCO_DICT = cv2.aruco.DICT_4X4_250
 
-W, H, FPS = 640, 480, 30
+W, H, FPS = 640, 480, 60
 
 NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
 BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
@@ -319,8 +319,7 @@ class Camera:
             print("Failed to capture image")
             return None, False, None
         timestamp = RBGD_frames.get_timestamp()
-        print("timestamp: ", timestamp, "timestamp type: ", type(timestamp))
-        # print(time.time())
+
         # Obtain Ball XYZ from RGBD frame and
         XYZ, ball_found = self.image_processing(RBGD_frames)
     
@@ -539,33 +538,17 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
     elif ball_color == ORANGE_BALL_COLOR:
-    # Orange mask (covers the usual orange hue range; tune if needed)
-        # lower_orange = (8, 160, 175)
-        # upper_orange = (12, 255, 255)
-        # lower_orange = (6, 120, 140)
-        # upper_orange = (16, 255, 255)
-        # lower_orange = (8, 150, 120)
-        # upper_orange = (18, 255, 255)
-
-        # Bright Indoor lighting
         lower_orange = (7, 160, 130)
         upper_orange = (18, 255, 255)
 
-        # "Normal" Indoor Lighting
-        # lower_orange = (7, 140, 110)
-        # upper_orange = (18, 255, 255)
-
-        # Dimmer lighting
-        # lower_orange = (6, 130, 90)
-        # upper_orange = (20, 255, 255)
         color_mask = cv2.inRange(hsv, lower_orange, upper_orange)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
     elif ball_color == GREEN_BALL_COLOR:
-        lower_green = (65, 50, 40)
+        lower_green = (70, 50, 40)
         upper_green = (90, 255, 255)
-        mean_green = (92, 78, 117)  # mean HSV of green ball samples
         using_bg_sub = True # bg sub seems to hurt green ball detection, so disable for green ball
+
         color_mask = cv2.inRange(hsv, lower_green, upper_green)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
@@ -581,7 +564,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         mask = cv2.bitwise_and(fg, color_mask)
     else:
         mask = color_mask
-
+        
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     pred = None
@@ -608,7 +591,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         solid = (area / hull_area) if hull_area > 0 else 0.0
 
         mean_hue, _ = mean_hue_in_hull(frame_bgr, hull)
-        hue_diff = abs(mean_hue - mean_green[0])
+        # hue_diff = abs(mean_hue - mean_green[0])
 
         x, y, w, h = cv2.boundingRect(c)
         aspect = max(w / max(1, h), h / max(1, w))

@@ -256,12 +256,14 @@ def arm_worker(
             try:
                 phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found, timestamp)
                 future_pts = []
-                for i in range(future_points_drawn):
-                    # t_future = timestamp + i * timestep
-                    t_future = arm.traj.t[-1] + i * timestep
+                if arm.traj.t.size > 0:
+                    
+                    for i in range(future_points_drawn):
+                        # t_future = timestamp + i * timestep
+                        t_future = arm.traj.t[-1] + i * timestep
 
-                    pred = np.asarray(arm.traj.predict_pos(t_future), dtype=np.float64).reshape(3)
-                    future_pts.append(pred)
+                        pred = np.asarray(arm.traj.predict_pos(t_future), dtype=np.float64).reshape(3)
+                        future_pts.append(pred)
                 future_pts_arr = np.asarray(future_pts, dtype=np.float64)
 
                 latest_arm_state.set(
