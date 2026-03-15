@@ -319,7 +319,7 @@ class Camera:
             print("Failed to capture image")
             return None, False, None
         timestamp = RBGD_frames.get_timestamp()
-        # print("timestamp: ", timestamp, "timestamp type: ", type(timestamp))
+        print("timestamp: ", timestamp, "timestamp type: ", type(timestamp))
         # print(time.time())
         # Obtain Ball XYZ from RGBD frame and
         XYZ, ball_found = self.image_processing(RBGD_frames)

@@ -66,49 +66,49 @@ class Arm:
         if not np.all(np.isfinite(xyz_meas)):
             raise ValueError("XYZ command contains NaN/Inf values.")
 
-        t_now_s = self.elapsed_time()  # current time (seconds)
-
-        # Ring-buffer append: store the newest XYZ + timestamp into circular history arrays.
-        self._pos_q[self._q_write_idx, :] = xyz_meas
-        self._time_q[self._q_write_idx] = t_now_s
-        self._q_write_idx = (self._q_write_idx + 1) % self._pos_q_max
-        if self._q_count < self._pos_q_max:
-            self._q_count += 1
+        # t_now_s = self.elapsed_time()  # current time (seconds)
 
         # Default IK target is the most recent measurement.
         ik_xyz = xyz_meas
 
-        # If we have enough samples, fit a trajectory to recent XYZ history and predict
-        # where it will be when it crosses a specific z-plane (z = 0.49 in your code).
-        if self._q_count >= 3:
-            oldest_idx = (self._q_write_idx - self._q_count) % self._pos_q_max
-            order_idx = (oldest_idx + np.arange(self._q_count, dtype=np.int64)) % self._pos_q_max
-            t_hist = self._time_q[order_idx]  # ordered times (oldest -> newest)
-            pos_hist = self._pos_q[order_idx, :]  # ordered positions (oldest -> newest)
+        self.traj.update_trajectory(timestamp, XYZ, self._pos_q_max)
 
-            self.traj.update_trajectory(timestamp, XYZ, self._pos_q_max)
+        # Solve for times when the fitted z(t) hits the plane z = 0.49.
+        pz = self.traj.pz.copy()
+        pz[-1] -= 0.49  # plane of intersection is at z= 0.49
+        z_roots = np.roots(pz) # UNITS: t_shift [millseconds]
+        # print("pz coefficients: ", pz, "z_roots: ", z_roots)
 
-            # Solve for times when the fitted z(t) hits the plane z = 0.49.
-            pz = self.traj.pz.copy()
-            pz[-1] -= 0.49  # plane of intersection is at z= 0.49
-            z_roots = np.roots(pz)
+        # Keep real roots only, then prefer future intersections if any exist.
+        real_dt = z_roots[np.abs(z_roots.imag) < 1e-8].real  # [milliseconds]
 
-            # Keep real roots only, then prefer future intersections if any exist.
-            real_dt = z_roots[np.abs(z_roots.imag) < 1e-8].real
-            fut_dt = real_dt[real_dt >= (t_hist[-1] - self.traj.t0)]
+        # real_dt: seconds after t0
+        # timestamp: milliseconds (from frame)
+        # self.traj.t0: milliseconds (from first point in traj
 
-            case = 1 # trace logic for prediction
-            if fut_dt.size > 0:
-                t_hit_s = self.traj.t0 + np.min(fut_dt)  # soonest future hit
-            elif real_dt.size > 0:
-                t_hit_s = self.traj.t0 + np.max(real_dt)  # most recent past hit
-                case = 2
-            else:
-                t_hit_s = t_hist[-1]  # no roots -> just use "now"
-                case = 3
+        t_now_shift = (timestamp - self.traj.t0)  # time right now (this frame's time) [seconds after t0]
+        fut_dt = real_dt[real_dt >= t_now_shift] # future [milliseconds] after t0 when trajectory hits z-plane
+        # print("z_roots: ", z_roots, ",real_dt: ", real_dt, "fut_dt: ", fut_dt)
+        # print("timestamp: ", timestamp, "traj.t[-1]: ", self.traj.t[-1], "fut_dt: ", fut_dt)
 
-            ik_xyz = self.traj.predict_pos(t_hit_s + self.traj.t0)[:, 0]  # predicted XYZ at the selected time
-            print("ik_xyz: ", ik_xyz, "t_hit_s: ", t_hit_s, "t0: ", self.traj.t0, "case: ", case)
+        if fut_dt.size > 0:
+            t_hit_ms = timestamp + np.max(fut_dt)  # Farthest future hit
+            case = 1
+        # elif real_dt.size > 0:
+        #     t_hit_s = self.traj.t0 + np.max(real_dt)  # most recent past hit
+        # else:
+        #     t_hit_s = timestamp  # no roots -> just use "now"
+
+        else:
+            # t_hit_s = timestamp  # no future roots -> just use "now"
+            case = 3
+            return self.prev_phi_cmd
+
+
+        ik_xyz = self.traj.predict_pos(t_hit_ms)[:, 0]  # predicted XYZ at the selected time
+
+
+        print("ik_xyz: ", ik_xyz, "t_hit_ms: ", t_hit_ms, "t0: ", self.traj.t0, "case: ", case)
 
         # Final frame for IK input is the predicted XYZ.
         ik_pos_cmd = ik_xyz
