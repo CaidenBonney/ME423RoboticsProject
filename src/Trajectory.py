@@ -11,18 +11,24 @@ class Trajectory:
         self.pz = np.array([0, 0, 0]) # degree 2 polynomial coeffs for z(t_shift)
         self.t0 = 0 # time origin for numerical stability (seconds). Gets set to first point timestamp
         self.t = np.array([]) 
-        self.pos = np.array([]) 
+        self.pos = np.array([0,0,0]).reshape(3,1) 
 
     def predict_pos(self, tt: float | np.ndarray) -> np.ndarray:
         """Position at time tt (seconds). Returns (3,) for scalar tt or (3,N) for array."""
+        # print("")
+        if np.size(self.t) == 0:
+            return np.zeros((3,)) if np.size(tt) > 1 else np.zeros((3,1))
         tt = np.asarray(tt)
         t_shift = tt - self.t0
         # print("self.px: ", self.px)
         # print("self.py: ", self.py)
         # print("self.pz: ", self.pz)
-        x = np.polyval(self.px, t_shift)
-        y = np.polyval(self.py, t_shift)
-        z = np.polyval(self.pz, t_shift)
+        # x = np.polyval(self.px, t_shift)
+        # y = np.polyval(self.py, t_shift)
+        # z = np.polyval(self.pz, t_shift)
+        x = self.pos[0,0]
+        y = self.pos[0,1]
+        z = self.pos[0,2]
         return np.vstack([x, y, z])
 
     def predict_vel(self, tt: float | np.ndarray) -> np.ndarray:

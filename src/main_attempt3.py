@@ -194,7 +194,12 @@ def camera_worker(
 
     while not stop_event.is_set():
         try:
+            time1camera = time.perf_counter()
             ballXYZ, ball_found, timestamp = cam.capture_and_process()
+            duration_camera = time.perf_counter() - time1camera
+            print(f"capture_and_process duration: {duration_camera:.4f} seconds")
+
+            time2camera = time.perf_counter()
             frame = np.asarray(cam.current_frame).copy()
 
             snapshot = CameraSnapshot(
@@ -209,6 +214,8 @@ def camera_worker(
                 score_parts=None if cam.score_parts is None else tuple(cam.score_parts),
             )
             latest_cam_snapshot.set(snapshot)
+            duration_snapshot = time.perf_counter() - time2camera
+            print(f"CameraSnapshot creation and set duration: {duration_snapshot:.4f} seconds")
 
             if ballXYZ is not None:
                 ballXYZ_queue.put_latest(
@@ -235,7 +242,7 @@ def arm_worker(
 
     moved = False
     start = arm.elapsed_time()
-    future_points_drawn = 5
+    future_points_drawn = 2
     timestep = 0.25
 
     try:
@@ -246,11 +253,17 @@ def arm_worker(
                 continue
 
             try:
+                time1 = time.perf_counter()
                 phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found, timestamp)
-
+                duration = time.perf_counter() - time1
+                print(f"ballXYZ_to_phi_cmd duration: {duration:.4f} seconds")
                 future_pts = []
+                now = time.time()
+                time2 = time.perf_counter()
                 for i in range(future_points_drawn):
-                    t_future = timestamp + i * timestep
+                    # t_future = timestamp + i * timestep
+                    t_future = now + i * timestep
+
                     pred = np.asarray(arm.traj.predict_pos(t_future), dtype=np.float64).reshape(3)
                     future_pts.append(pred)
                 future_pts_arr = np.asarray(future_pts, dtype=np.float64)
@@ -263,9 +276,14 @@ def arm_worker(
                         last_timestamp=float(timestamp),
                     )
                 )
+                duration2 = time.perf_counter() - time2
+                print(f"ArmOverlayState update duration: {duration2:.4f} seconds")
 
                 if not moved:
+                    time3 = time.perf_counter()
                     arm.move(phi_Cmd=phi_cmd)
+                    duration3 = time.perf_counter() - time3
+                    print(f"arm.move duration: {duration3:.4f} seconds")
                     moved = True
 
             except ValueError as e:
@@ -319,11 +337,15 @@ def main() -> None:
             arm_state = latest_arm_state.get()
 
             if snap is not None:
+
+                time_main_loop = time.perf_counter()
                 camera_view = draw_camera_overlay(snap.frame, snap)
                 arm_view = draw_arm_overlay(snap.frame, cam, snap, arm_state)
 
                 cv2.imshow("camera_pov", camera_view)
                 cv2.imshow("arm_pov", arm_view)
+                duration_main_loop = time.perf_counter() - time_main_loop
+                print(f"Main loop draw and imshow duration: {duration_main_loop:.4f} seconds")
 
             key = cv2.waitKey(1)
             if key == 27:  # ESC

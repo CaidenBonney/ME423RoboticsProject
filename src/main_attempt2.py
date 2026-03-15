@@ -192,12 +192,12 @@ def main() -> None:
  
             # cv2.imshow("camera_pov", cam_frame)
             arm_frame = arm_frame_shared["frame"]
-            if arm_frame is not None:
-                cv2.imshow("arm_pov", arm_frame)
+            # if arm_frame is not None:
+            #     cv2.imshow("arm_pov", arm_frame)
 
-            key = cv2.waitKey(1)
-            if key == 27:  # ESC
-                break
+            # key = cv2.waitKey(1)
+            # if key == 27:  # ESC
+            #     break
 
             time.sleep(0.001)
 
