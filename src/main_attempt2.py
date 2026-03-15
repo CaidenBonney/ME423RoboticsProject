@@ -168,8 +168,15 @@ def main() -> None:
                     2,
                     cv2.LINE_AA,
                 )
-
+ 
             cv2.imshow("camera_pov", cam_frame)
+
+            """
+            1) make empty of list of points
+            2) populate list of points with future trajectory preictions
+            3) convert points into pixel values
+            4) draw points on arm frame
+            """
 
             arm_frame = arm_frame_shared["frame"]
             if arm_frame is not None:
