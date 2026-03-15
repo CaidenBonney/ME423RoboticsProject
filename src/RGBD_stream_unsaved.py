@@ -93,7 +93,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         # sc of green ball
         # lower_green = (70, 140, 120)
         # upper_green = (82, 255, 255)
-        lower_green = (65, 50, 40)
+        lower_green = (70, 50, 40)
         upper_green = (90, 255, 255)
         using_bg_sub = True # bg sub seems to hurt green ball detection, so disable for green ball
 
