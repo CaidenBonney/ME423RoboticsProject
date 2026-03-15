@@ -311,13 +311,13 @@ class Camera:
     
 
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
-    def capture_and_process(self) -> tuple[Optional[np.ndarray], bool]:
+    def capture_and_process(self) -> tuple[Optional[np.ndarray], bool, Optional[float]]:
         """ Captures an RGB and depth frame from the camera and outputs the ball XYZ (w.r.t base coords)"""
         # Grab the latest RGBD frames
         RBGD_frames = self.capture_image()
         if RBGD_frames is None:
             print("Failed to capture image")
-            return None
+            return None, False, None
         timestamp = RBGD_frames.get_timestamp()
         # print("timestamp: ", timestamp, "timestamp type: ", type(timestamp))
         # print(time.time())
