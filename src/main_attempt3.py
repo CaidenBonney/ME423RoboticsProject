@@ -272,13 +272,10 @@ def arm_worker(
                         last_timestamp=float(timestamp),
                     )
                 )
-                duration2 = time.perf_counter() - time2
                 # print(f"ArmOverlayState update duration: {duration2:.4f} seconds")
 
                 if not moved:
-                    time3 = time.perf_counter()
                     arm.move(phi_Cmd=phi_cmd)
-                    duration3 = time.perf_counter() - time3
                     # print(f"arm.move duration: {duration3:.4f} seconds")
                     moved = True
 
@@ -334,14 +331,11 @@ def main() -> None:
 
             if snap is not None:
 
-                time_main_loop = time.perf_counter()
                 camera_view = draw_camera_overlay(snap.frame, snap)
                 arm_view = draw_arm_overlay(snap.frame, cam, snap, arm_state)
 
                 cv2.imshow("camera_pov", camera_view)
                 cv2.imshow("arm_pov", arm_view)
-                duration_main_loop = time.perf_counter() - time_main_loop
-                # print(f"Main loop draw and imshow duration: {duration_main_loop:.4f} seconds")
 
             key = cv2.waitKey(1)
             if key == 27:  # ESC
