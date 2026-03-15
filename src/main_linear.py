@@ -157,6 +157,7 @@ def main() -> None:
 
     try:
         while arm.myArm.status:
+            time1 = time.perf_counter()
             # 1) Capture + process one frame
             result = cam.capture_and_process()
             if result is None:
@@ -244,6 +245,8 @@ def main() -> None:
             key = cv2.waitKey(1)
             if key == 27:  # ESC
                 break
+            duration = time.perf_counter() - time1
+            print(f"Main loop duration: {duration:.4f} seconds")
 
     except KeyboardInterrupt:
         pass
