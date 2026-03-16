@@ -57,6 +57,20 @@ class Arm:
         return time.time() - self.startTime
 
     def ballXYZ_to_phi_cmd(self, XYZ: np.ndarray, ball_found: bool, timestamp: float) -> Optional[np.ndarray]:
+        """ Converts a detected ball position to joint angles for interception.
+        Houses a Trajectory object to buffer the ball position over time to enable polynomial fitting and prediction.
+        Utilizes reverse kinematics to convert the predicted interception point to joint angles. 
+        
+        Args:
+            XYZ: Detected ball position in 3D space w.r.t QArm base (meters).
+            ball_found: Boolean indicating if the ball was detected in the current frame.
+            timestamp: Time of the current frame (milliseconds).
+
+        Returns:
+            phi_cmd: Joint angles [rad] for interception, or previous command if ball is lost.
+        """
+        
+
         if not ball_found:
             self.missed_frames += 1
             if self.missed_frames == self.missed_frames_max:
@@ -153,6 +167,16 @@ class Arm:
         return phi_cmd
 
     def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None) -> None:
+        """ Commands the arm to move to the desired joint angles with optional gripper and LED states.
+        Checks for physical limits and workspace constraints before sending the command to the arm. 
+        Note that speed is not specified in this command. 
+        
+        Args:
+            phi_Cmd: Desired joint angles [rad].
+            gripper_Cmd: Desired gripper state (0=open, 1=closed).
+            led_Cmd: Desired LED state [R, G, B], each in the range [0, 255].
+
+        """
         # region: Process Inputs:
         phi_cmd = np.asarray(phi_Cmd, dtype=np.float64)
         if phi_cmd.shape != (4,):
