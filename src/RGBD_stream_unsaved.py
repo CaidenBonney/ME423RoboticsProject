@@ -18,6 +18,7 @@ MARKER_ID = 67
 MARKER_LENGTH_M = 0.07
 ARUCO_DICT = cv2.aruco.DICT_4X4_250
 
+W, H, FPS = 640, 480, 30
 
 NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
 BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
@@ -159,6 +160,8 @@ def robust_depth_at_pixel(depth_frame, u: int, v: int, radius: int) -> float:
 print("RUNNING...")
 warmup_frames = 30
 warmup_frames_count = 0
+fps = 60
+W, H = 640, 480
 warm_up_video_path = "src/videos/warmup_video.mp4"
 
 if os.path.exists(warm_up_video_path):

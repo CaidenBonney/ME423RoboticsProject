@@ -39,7 +39,7 @@ CALIBRATION_FILE = "camera_calib.yml"
 class Camera:
     def __init__(self) -> None:
         self.startTime = time.time()
-        self.sampleRate = 30
+        self.sampleRate = FPS  # [Hz] how often to capture/process frames from the camera. Can be lower than the camera FPS to reduce noise and CPU load.
         self.sampleTime = 1 / self.sampleRate
         self.bs = None  # background susbtractor mpdel
         self.intrinsics = None  # camera intrinsics
