@@ -41,7 +41,6 @@ class Arm:
         self.missed_frames = 0 # count the number of frames since the ball was last seen
         self.missed_frames_max = 20
         self.prev_phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)
-        self.new_phi_commanded = False
         self.interception_point_ROBOT = None
         self.interception_time = None
 
@@ -70,12 +69,10 @@ class Arm:
         Returns:
             phi_cmd: Joint angles [rad] for interception, or previous command if ball is lost.
         """
-        
-
-        if not ball_found:
+        if not ball_found or ball_found is None:
             self.missed_frames += 1
             if self.missed_frames == self.missed_frames_max:
-                print("Creating new trajectory object, lost tracking", self.traj_number)
+                print("Creating new trajectory object, lost tracking", self.traj_number, "time: ", timestamp)
                 self.traj = Trajectory()
                 self.traj_number += 1
             return self.prev_phi_cmd
@@ -94,7 +91,7 @@ class Arm:
 
         # Solve for times when the fitted z(t) hits the plane z = 0.49.
         pz = self.traj.pz.copy()
-        pz[-1] -= 0  # plane of intersection is at z= 0.49
+        pz[-1] -= 0.49  # plane of intersection is at z= 0.49
         z_roots = np.roots(pz) # UNITS: t_shift [millseconds]
         # print("pz coefficients: ", pz, "z_roots: ", z_roots)
 
@@ -189,7 +186,6 @@ class Arm:
             return  # no movement needed
         else:
             self._phi = phi_cmd
-        self.new_phi_commanded = False
 
         # Optional gripper command
         if gripper_Cmd is not None:
@@ -215,8 +211,7 @@ class Arm:
         # Commands arm to move to desired phi_cmd with gripper and LED states.
         # Currently uses initial internal values for gripper and LED if not specified as an input.
         # Note that speed is not specified in this command.
-        if self.new_phi_commanded:
-            self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
+        self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
 
     # Only checks physical limits of the arm
     def limit_check(self, phi_cmd) -> None:

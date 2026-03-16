@@ -81,7 +81,7 @@ class Trajectory:
             self.py = np.array([0.0, self.pos[0, 1]])
 
         if self.t.size >= 3:
-            if self.points_since_update >= update_freq:
+            if self.points_since_update >= 0:
                 # self.pz = np.polyfit(t_shift, self.pos[:, 2],
                 self.pz = sp.curve_fit(lambda t, a, b, c: a*t**2 + b*t + c, t_shift, self.pos[:, 2])[0]#, bounds=([0, -np.inf, -np.inf], [-np.inf, np.inf, np.inf]))[0]
                 self.points_since_update = 0

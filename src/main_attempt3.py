@@ -183,7 +183,7 @@ def draw_arm_overlay(
             except Exception:
                 pass
 
-    if arm_state is not None and arm_state.interception_point_ROBOT is not None:
+    if arm_state is not None:# and arm_state.interception_point_ROBOT is not None:
         interception_xyz = arm_state.interception_point_ROBOT
         if interception_xyz is not None:
             try:
@@ -199,23 +199,7 @@ def draw_arm_overlay(
                 # print(f"Projected interception point {interception_xyz} to camera pixel ({u}, {v})")   
             except Exception:
                 pass
-    
-    if arm_state is not None and arm_state.interception_point_ROBOT is not None:
-        interception_xyz = arm_state.interception_point_ROBOT
-        if interception_xyz is not None:
-            try:
-                u, v = project_robot_point_to_camera(cam, interception_xyz)
-                cv2.drawMarker(
-                    out,
-                    (int(u), int(v)),
-                    (0, 0, 255),
-                    cv2.MARKER_DIAMOND,
-                    30,
-                    3,
-                )
-                # print(f"Projected interception point {interception_xyz} to camera pixel ({u}, {v})")   
-            except Exception:
-                pass
+
     if arm_state is not None and arm_state.past_robot_points is not None:
         for xyz in np.asarray(arm_state.past_robot_points):
             try:
@@ -303,6 +287,7 @@ def arm_worker(
             try:
                 ballXYZ, ball_found, timestamp = ballXYZ_queue.get(timeout=0.02)
             except queue.Empty:
+                print ("Ball XYZ queue is empty")
                 continue
 
             try:
@@ -339,11 +324,10 @@ def arm_worker(
                     moved = True
 
             except ValueError as e:
-                # print(f"Command error: {e}")
+                # print(f"Command error: {e}, phi_cmd: {phi_cmd}")
                 arm.home()
             except Exception as e:
                 print(f"arm_worker loop error: {e}")
-
             if (arm.elapsed_time() - start) > arm.sampleTime and moved:
                 moved = False
                 start = start + arm.sampleTime
