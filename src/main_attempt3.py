@@ -1,4 +1,8 @@
+from math import e
+from turtle import st
+
 import cv2
+from cycler import K
 import numpy as np
 import queue
 import threading
@@ -27,11 +31,12 @@ class CameraSnapshot:
 class ArmOverlayState:
     phi_cmd: Optional[np.ndarray] = None
     future_robot_points: Optional[np.ndarray] = None  # shape (N, 3)
-    past_robot_points: Optional[np.ndarray] = None # shape (M, 3)
+    past_robot_points: Optional[np.ndarray] = None  # shape (M, 3)
     last_ballXYZ: Optional[np.ndarray] = None
     last_timestamp: Optional[float] = None
     interception_point_ROBOT: Optional[np.ndarray] = None
     interception_time: Optional[float] = None
+
 
 class SharedLatest:
     """Thread-safe latest-value container.
@@ -179,7 +184,7 @@ def draw_arm_overlay(
                     10,
                     2,
                 )
-                # print(f"Projected future robot point {xyz} to camera pixel ({u}, {v})")   
+                # print(f"Projected future robot point {xyz} to camera pixel ({u}, {v})")
             except Exception:
                 pass
 
@@ -196,7 +201,7 @@ def draw_arm_overlay(
                     30,
                     3,
                 )
-                # print(f"Projected interception point {interception_xyz} to camera pixel ({u}, {v})")   
+                # print(f"Projected interception point {interception_xyz} to camera pixel ({u}, {v})")
             except Exception:
                 pass
 
@@ -212,7 +217,7 @@ def draw_arm_overlay(
                     10,
                     2,
                 )
-                # print(f"Projected future robot point {xyz} to camera pixel ({u}, {v})")   
+                # print(f"Projected future robot point {xyz} to camera pixel ({u}, {v})")
             except Exception:
                 pass
 
@@ -227,6 +232,7 @@ def camera_worker(
     ready: threading.Event,
 ) -> None:
     ready.set()
+    # return  # Uncomment for manual control of arm
 
     while not stop_event.is_set():
         try:
@@ -312,13 +318,84 @@ def arm_worker(
                         past_robot_points=past_pts,
                         last_ballXYZ=np.asarray(ballXYZ, dtype=np.float64).reshape(3),
                         last_timestamp=float(timestamp),
-                        interception_point_ROBOT=np.asarray(interception_point_ROBOT, dtype=np.float64).reshape(3) if interception_point_ROBOT is not None else None,
-                        interception_time=float(interception_time) if interception_time is not None else None
+                        interception_point_ROBOT=(
+                            np.asarray(interception_point_ROBOT, dtype=np.float64).reshape(3)
+                            if interception_point_ROBOT is not None
+                            else None
+                        ),
+                        interception_time=float(interception_time) if interception_time is not None else None,
                     )
                 )
                 # print(f"ArmOverlayState update duration: {duration2:.4f} seconds")
 
                 if not moved:
+                    arm.move(phi_Cmd=phi_cmd)
+                    moved = True
+
+            except ValueError as e:
+                # print(f"Command error: {e}")
+                arm.home()
+            except EOFError:
+                break
+            except Exception as e:
+                print(f"arm_worker loop error: {e}")
+
+            if (arm.elapsed_time() - start) > arm.sampleTime and moved:
+                moved = False
+                start = start + arm.sampleTime
+    finally:
+        try:
+            arm.myArm.terminate()
+        except Exception as e:
+            print(f"Terminate error: {e}")
+
+        # Stop the entire program when the arm is terminated
+        stop_event.set()
+
+
+def manual_control_arm_worker(
+    latest_cam_snapshot: SharedLatest,
+    latest_arm_state: SharedLatest,
+    ballXYZ_queue: LatestQueue,
+    stop_event: threading.Event,
+    ready: threading.Event,
+) -> None:
+    arm = Arm()
+    ready.set()
+
+    moved = False
+    start = arm.elapsed_time()
+    try:
+        while not stop_event.is_set() and arm.myArm.status:
+            try:
+                phi_cmd = np.array([0.2, 0, 0, 0], dtype=np.float64)
+                if not moved:
+                    inp = input("test input: ")
+                    if inp == "home":
+                        arm.home()
+                        continue
+                    elif len(inp.split(",")) == 4:
+                        inp_ls = inp.split(",")
+                        phi_cmd = np.array(
+                            [
+                                float(inp_ls[0]),
+                                float(inp_ls[1]),
+                                float(inp_ls[2]),
+                                float(inp_ls[3]),
+                            ],
+                            dtype=np.float64,
+                        )
+                    elif inp == "phi":
+                        print(arm.phi)
+                        continue
+                    elif inp == "_phi":
+                        print(arm.prev_meas_phi)
+                        continue
+                    elif inp == "_phi_offset":
+                        print(arm._phi_offset)
+                        continue
+
+                    print(f"moving arm with command: {phi_cmd}")
                     arm.move(phi_Cmd=phi_cmd)
                     # print(f"arm.move duration: {duration3:.4f} seconds")
                     moved = True
@@ -326,6 +403,8 @@ def arm_worker(
             except ValueError as e:
                 # print(f"Command error: {e}, phi_cmd: {phi_cmd}")
                 arm.home()
+            except EOFError:
+                break
             except Exception as e:
                 print(f"arm_worker loop error: {e}")
             if (arm.elapsed_time() - start) > arm.sampleTime and moved:
@@ -337,11 +416,15 @@ def arm_worker(
         except Exception as e:
             print(f"Terminate error: {e}")
 
+        # Stop the entire program when the arm is terminated
+        stop_event.set()
+
 
 def main() -> None:
     stop_event = threading.Event()
 
-    cam = Camera()
+    cam = Camera()  # Comment out for manual control of arm
+    # cam = None    # Uncomment for manual control of arm  # fmt: skip
     latest_cam_snapshot = SharedLatest()
     latest_arm_state = SharedLatest()
     ballXYZ_queue = LatestQueue()
@@ -356,6 +439,7 @@ def main() -> None:
     )
 
     arm_thread = threading.Thread(
+        # target=manual_control_arm_worker,
         target=arm_worker,
         args=(latest_cam_snapshot, latest_arm_state, ballXYZ_queue, stop_event, arm_ready),
         daemon=False,
@@ -388,6 +472,7 @@ def main() -> None:
 
     except KeyboardInterrupt:
         pass
+
     finally:
         stop_event.set()
         cam_thread.join()
