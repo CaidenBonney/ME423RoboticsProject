@@ -1,8 +1,4 @@
-from math import e
-from turtle import st
-
 import cv2
-from cycler import K
 import numpy as np
 import queue
 import threading
@@ -188,7 +184,7 @@ def draw_arm_overlay(
             except Exception:
                 pass
 
-    if arm_state is not None:# and arm_state.interception_point_ROBOT is not None:
+    if arm_state is not None:  # and arm_state.interception_point_ROBOT is not None:
         interception_xyz = arm_state.interception_point_ROBOT
         if interception_xyz is not None:
             try:
@@ -293,7 +289,7 @@ def arm_worker(
             try:
                 ballXYZ, ball_found, timestamp = ballXYZ_queue.get(timeout=0.02)
             except queue.Empty:
-                print ("Ball XYZ queue is empty")
+                print("Ball XYZ queue is empty")
                 continue
 
             try:
@@ -326,14 +322,13 @@ def arm_worker(
                         interception_time=float(interception_time) if interception_time is not None else None,
                     )
                 )
-                # print(f"ArmOverlayState update duration: {duration2:.4f} seconds")
 
                 if not moved:
                     arm.move(phi_Cmd=phi_cmd)
                     moved = True
 
             except ValueError as e:
-                # print(f"Command error: {e}")
+                print(f"Command error: {e}")
                 arm.home()
             except EOFError:
                 break
@@ -439,8 +434,8 @@ def main() -> None:
     )
 
     arm_thread = threading.Thread(
-        # target=manual_control_arm_worker,
-        target=arm_worker,
+        # target=manual_control_arm_worker,  # Uncomment for manual control of arm  # fmt: skip
+        target=arm_worker,  # Comment out for manual control of arm  # fmt: skip
         args=(latest_cam_snapshot, latest_arm_state, ballXYZ_queue, stop_event, arm_ready),
         daemon=False,
     )

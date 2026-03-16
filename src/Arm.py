@@ -39,9 +39,9 @@ class Arm:
         self._q_write_idx = 0
         self._q_count = 0
 
-        self.traj = Trajectory() # initialize empty trajectory
-        self.traj_number = 0 # count the number of trajectories created, used for debugging
-        self.missed_frames = 0 # count the number of frames since the ball was last seen
+        self.traj = Trajectory()  # initialize empty trajectory
+        self.traj_number = 0  # count the number of trajectories created, used for debugging
+        self.missed_frames = 0  # count the number of frames since the ball was last seen
         self.missed_frames_max = 20
         self.prev_phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)
         self.interception_point_ROBOT = None
@@ -94,7 +94,7 @@ class Arm:
         # Solve for times when the fitted z(t) hits the plane z = 0.49.
         pz = self.traj.pz.copy()
         pz[-1] -= 0.49  # plane of intersection is at z= 0.49
-        z_roots = np.roots(pz) # UNITS: t_shift [millseconds]
+        z_roots = np.roots(pz)  # UNITS: t_shift [millseconds]
         # print("pz coefficients: ", pz, "z_roots: ", z_roots)
 
         # Keep real roots only, then prefer future intersections if any exist.
