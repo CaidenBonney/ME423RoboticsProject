@@ -4,3 +4,4 @@ pyserial
 numpy
 pandas
 matplotlib
+scipy

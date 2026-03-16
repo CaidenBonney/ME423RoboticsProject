@@ -32,14 +32,16 @@ class Arm:
         self._gripper = np.array(0.0, dtype=np.float64)  # 0 = open, 1 = closed
         self._led = np.array([1, 0, 1], dtype=np.float64)  # [R, G, B] values as floats from 0 to 1
 
-        self._pos_q_max = 64
+        # self._xyz_origin_offset = np.array([0.45, 0.0, 0.49], dtype=np.float64)
+        self._pos_q_max = 100
         self._pos_q = np.empty((self._pos_q_max, 3), dtype=np.float64)
         self._time_q = np.empty(self._pos_q_max, dtype=np.float64)
         self._q_write_idx = 0
         self._q_count = 0
 
-        self.traj = Trajectory()  # initialize empty trajectory
-        self.missed_frames = 0  # count the number of frames since the ball was last seen
+        self.traj = Trajectory() # initialize empty trajectory
+        self.traj_number = 0 # count the number of trajectories created, used for debugging
+        self.missed_frames = 0 # count the number of frames since the ball was last seen
         self.missed_frames_max = 20
         self.prev_phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)
         self.interception_point_ROBOT = None
@@ -69,12 +71,12 @@ class Arm:
         Returns:
             phi_cmd: Joint angles [rad] for interception, or previous command if ball is lost.
         """
-
-        if not ball_found:
+        if not ball_found or ball_found is None:
             self.missed_frames += 1
             if self.missed_frames == self.missed_frames_max:
-                print("Creating new trajectory object, lost tracking")
+                print("Creating new trajectory object, lost tracking", self.traj_number, "time: ", timestamp)
                 self.traj = Trajectory()
+                self.traj_number += 1
             return self.prev_phi_cmd
         # Convert input to a clean (3,) float vector; reject NaN/Inf early.
         self.missed_frames = 0
@@ -91,8 +93,8 @@ class Arm:
 
         # Solve for times when the fitted z(t) hits the plane z = 0.49.
         pz = self.traj.pz.copy()
-        pz[-1] -= 0  # plane of intersection is at z= 0.49
-        z_roots = np.roots(pz)  # UNITS: t_shift [millseconds]
+        pz[-1] -= 0.49  # plane of intersection is at z= 0.49
+        z_roots = np.roots(pz) # UNITS: t_shift [millseconds]
         # print("pz coefficients: ", pz, "z_roots: ", z_roots)
 
         # Keep real roots only, then prefer future intersections if any exist.

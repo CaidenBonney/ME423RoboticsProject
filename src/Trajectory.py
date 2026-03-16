@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import numpy as np
+import scipy.optimize as sp
 
 
 @dataclass
@@ -11,7 +12,8 @@ class Trajectory:
         self.pz = np.array([0, 0, 0]) # degree 2 polynomial coeffs for z(t_shift)
         self.t0 = 0 # time origin for numerical stability (milliseconds). Gets set to first point timestamp
         self.t = np.array([])  # timestamps of observed points (milliseconds)
-        self.pos = np.array([0,0,0]).reshape(3,1) 
+        self.pos = np.array([0,0,0]).reshape(3,1)
+        self.points_since_update = 5 # count how many points have been added since the last trajectory update, used to determine when to update the trajectory fit 
 
     def predict_pos(self, tt: float | np.ndarray) -> np.ndarray:
         """Position at time tt (milliseconds). Returns (3,) for scalar tt or (3,N) for array."""
@@ -42,7 +44,7 @@ class Trajectory:
         return np.vstack([vx, vy, vz])
 
 
-    def update_trajectory(self, t: np.ndarray, pos: np.ndarray, window_size: int) -> None:
+    def update_trajectory(self, t: np.ndarray, pos: np.ndarray, window_size: int, update_freq: int = 5) -> None:
         # t is the timestamp of the frame in which the point was detected in global time (milliseconds)
         t = np.asarray(t).reshape(-1)
         pos = np.asarray(pos).reshape(-1, 3)
@@ -57,10 +59,10 @@ class Trajectory:
             self.pos = np.concatenate([self.pos, pos], axis=0)
 
         # Keep only the most recent window
-        # if self.t.size > window_size:
-        #     self.t = self.t[-window_size:]
-        #     self.t0 = self.t[0]  # update t0 to the new oldest timestamp for numerical stability
-        #     self.pos = self.pos[-window_size:, :]
+        if self.t.size > window_size:
+            self.t = self.t[-window_size:]
+            self.t0 = self.t[0]  # update t0 to the new oldest timestamp for numerical stability
+            self.pos = self.pos[-window_size:, :]
 
         # print("t0: ", self.t0)
         t_shift = (self.t - self.t0)  # [milliseconds] shift by t0 for numerical stability
@@ -68,13 +70,23 @@ class Trajectory:
         
         # Fit only when enough points exist
         if self.t.size >= 2:
-            self.px = np.polyfit(t_shift, self.pos[:, 0], 1)
-            self.py = np.polyfit(t_shift, self.pos[:, 1], 1)
+            if self.points_since_update >= update_freq:
+                self.px = np.polyfit(t_shift, self.pos[:, 0], 1)
+                self.py = np.polyfit(t_shift, self.pos[:, 1], 1)
+                self.points_since_update = 0
+            else:
+                self.points_since_update += 1
         else:
             self.px = np.array([0.0, self.pos[0, 0]])
             self.py = np.array([0.0, self.pos[0, 1]])
 
         if self.t.size >= 3:
-            self.pz = np.polyfit(t_shift, self.pos[:, 2], 2)    
+            if self.points_since_update >= 0:
+                # self.pz = np.polyfit(t_shift, self.pos[:, 2],
+                self.pz = sp.curve_fit(lambda t, a, b, c: a*t**2 + b*t + c, t_shift, self.pos[:, 2])[0]#, bounds=([0, -np.inf, -np.inf], [-np.inf, np.inf, np.inf]))[0]
+                self.points_since_update = 0
+                print("z fit coeffs: ", self.pz)
+            else:
+                self.points_since_update += 1
         elif self.t.size >= 1:
             self.pz = np.array([0.0, 0.0, self.pos[0, 2]])
