@@ -23,6 +23,8 @@ MIN_VALID_CORNERS = 3
 WHITE_BALL_COLOR = 0
 ORANGE_BALL_COLOR = 1
 GREEN_BALL_COLOR = 2
+SPIKE_BALL_COLOR = 3
+
 
 # White mask values
 S_HIGH = 70
@@ -74,6 +76,7 @@ class Camera:
     def capture_image(self) -> rs.align:
         """ Captures an RGB and depth frame from the camera. 
         Images are aligned."""
+
         frames = self.pipeline.wait_for_frames()
         aligned_frames = self.align.process(frames)
         rgb = aligned_frames.get_color_frame()
@@ -102,8 +105,14 @@ class Camera:
         self.cam_calibration()
 
     def cam_calibration(self, path: str = "camera_calib.yml") -> None:
+        """ Executes the following camera setup steps:
+            1. Loads the camera calibration file to remove fishey distortion.
+            2. Solves the camera to robot transformation.
+            3. Creates the background subtractor model.
+        """
+
         self.camera_matrix, self.dist_coeffs = load_calibration(CALIBRATION_FILE)
-        print("SOLVING ROBOT TRANSFORMATION ...")
+        print("SOLVING CAMERA TO ROBOT TRANSFORMATION ...")
         self.get_robot_transformation()
         print("ROBOT TRANSFORMATION SOLVED...")
         self.create_background_model()
@@ -552,6 +561,15 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         color_mask = cv2.inRange(hsv, lower_green, upper_green)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
+    elif ball_color == SPIKE_BALL_COLOR:
+        # ** THESE VALUES ARE MADE UP, need to tune**
+        lower_yellow = (70, 50, 40)
+        upper_yellow = (90, 255, 255)
+
+        color_mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
+        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
+        color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
+
     else:
         raise ValueError(f"Invalid ball color: {ball_color}")
 
