@@ -1,8 +1,8 @@
 # Special QArm library imports
 from typing import Optional
 
-from pal.products.qarm import QArm  # pyright: ignore[reportMissingImports]
-from hal.products.qarm import QArmUtilities  # pyright: ignore[reportMissingImports]
+from pal.products.qarm import QArm
+from hal.products.qarm import QArmUtilities
 
 # Standard library imports
 import time
@@ -21,46 +21,46 @@ class Arm:
         # print("Sample Rate is ", self.sampleRate, " Hz. Simulation will run until you type Ctrl+C to exit.")
 
         # Internal variables for current state of the arm
-        # [rad] joint angles for 4 joints in order: base, shoulder, elbow, wrist
-        self._phi = np.array([0, 0, 0, 0], dtype=np.float64)
+        self.prev_meas_phi = np.array([0, 0, 0, 0], dtype=np.float64)  # [rad] joint angles for 4 joints in order: base, shoulder, elbow, wrist  # fmt: skip
+        self.prev_meas_pos = np.array([0, 0, 0], dtype=np.float64)  # [m]
+
+        self.phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)
+        self.pos_cmd = np.array([0, 0, 0], dtype=np.float64)
+
         self._phi_dot = np.array([0, 0, 0, 0], dtype=np.float64)  # [rad/s]
-        self._position = np.array([0, 0, 0], dtype=np.float64)  # [m]
         self._R = np.identity(3, dtype=np.float64)  # rotation matrix from end-effector frame to base frame
         self._gripper = np.array(0.0, dtype=np.float64)  # 0 = open, 1 = closed
         self._led = np.array([1, 0, 1], dtype=np.float64)  # [R, G, B] values as floats from 0 to 1
 
-        # self._xyz_origin_offset = np.array([0.45, 0.0, 0.49], dtype=np.float64)
         self._pos_q_max = 64
         self._pos_q = np.empty((self._pos_q_max, 3), dtype=np.float64)
         self._time_q = np.empty(self._pos_q_max, dtype=np.float64)
         self._q_write_idx = 0
         self._q_count = 0
 
-        self.traj = Trajectory() # initialize empty trajectory
-        self.missed_frames = 0 # count the number of frames since the ball was last seen
+        self.traj = Trajectory()  # initialize empty trajectory
+        self.missed_frames = 0  # count the number of frames since the ball was last seen
         self.missed_frames_max = 20
         self.prev_phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)
-        self.new_phi_commanded = False
         self.interception_point_ROBOT = None
         self.interception_time = None
 
-        # transformation matrix from end-effector frame to base frame adjusted in qarm_forward_kinematics
-        self.T04 = np.identity(4, dtype=np.float64)
+        self.T04 = np.identity(4, dtype=np.float64)  # transformation matrix from end-effector frame to base frame adjusted in qarm_forward_kinematics  # fmt: skip
         self.L_6 = 0.075  # distance from qarm end-effector center to net end effector center in meters
 
+        # Determine offset of initial position to home position for measuring joint angles
         self.home()
-        # [rad] joint angles for 4 joints in order: base, shoulder, elbow, wrist
-        self._phi_offset = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64)
+        self._phi_offset = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64)  # [rad] joint angles for 4 joints in order: base, shoulder, elbow, wrist  # fmt: skip
         print(self._phi_offset)
 
     def elapsed_time(self) -> float:
         return time.time() - self.startTime
 
     def ballXYZ_to_phi_cmd(self, XYZ: np.ndarray, ball_found: bool, timestamp: float) -> Optional[np.ndarray]:
-        """ Converts a detected ball position to joint angles for interception.
+        """Converts a detected ball position to joint angles for interception.
         Houses a Trajectory object to buffer the ball position over time to enable polynomial fitting and prediction.
-        Utilizes reverse kinematics to convert the predicted interception point to joint angles. 
-        
+        Utilizes reverse kinematics to convert the predicted interception point to joint angles.
+
         Args:
             XYZ: Detected ball position in 3D space w.r.t QArm base (meters).
             ball_found: Boolean indicating if the ball was detected in the current frame.
@@ -69,7 +69,6 @@ class Arm:
         Returns:
             phi_cmd: Joint angles [rad] for interception, or previous command if ball is lost.
         """
-        
 
         if not ball_found:
             self.missed_frames += 1
@@ -93,7 +92,7 @@ class Arm:
         # Solve for times when the fitted z(t) hits the plane z = 0.49.
         pz = self.traj.pz.copy()
         pz[-1] -= 0  # plane of intersection is at z= 0.49
-        z_roots = np.roots(pz) # UNITS: t_shift [millseconds]
+        z_roots = np.roots(pz)  # UNITS: t_shift [millseconds]
         # print("pz coefficients: ", pz, "z_roots: ", z_roots)
 
         # Keep real roots only, then prefer future intersections if any exist.
@@ -103,8 +102,8 @@ class Arm:
         # timestamp: milliseconds (from frame)
         # self.traj.t0: milliseconds (from first point in traj
 
-        t_now_shift = (timestamp - self.traj.t0)  # time right now (this frame's time) [seconds after t0]
-        fut_dt = real_dt[real_dt >= t_now_shift] # future [milliseconds] after t0 when trajectory hits z-plane
+        t_now_shift = timestamp - self.traj.t0  # time right now (this frame's time) [seconds after t0]
+        fut_dt = real_dt[real_dt >= t_now_shift]  # future [milliseconds] after t0 when trajectory hits z-plane
         # print("z_roots: ", z_roots, ",real_dt: ", real_dt, "fut_dt: ", fut_dt)
         # print("timestamp: ", timestamp, "traj.t[-1]: ", self.traj.t[-1], "fut_dt: ", fut_dt)
 
@@ -121,11 +120,9 @@ class Arm:
             case = 3
             return self.prev_phi_cmd
 
-
         ik_xyz = self.traj.predict_pos(t_hit_ms)[:, 0]  # predicted XYZ at the selected time
         self.interception_point_ROBOT = ik_xyz
         self.interception_time = t_hit_ms
-
 
         # print("ik_xyz: ", ik_xyz, "t_hit_ms: ", t_hit_ms, "t0: ", self.traj.t0, "case: ", case)
 
@@ -167,10 +164,10 @@ class Arm:
         return phi_cmd
 
     def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None) -> None:
-        """ Commands the arm to move to the desired joint angles with optional gripper and LED states.
-        Checks for physical limits and workspace constraints before sending the command to the arm. 
-        Note that speed is not specified in this command. 
-        
+        """Commands the arm to move to the desired joint angles with optional gripper and LED states.
+        Checks for physical limits and workspace constraints before sending the command to the arm.
+        Note that speed is not specified in this command.
+
         Args:
             phi_Cmd: Desired joint angles [rad].
             gripper_Cmd: Desired gripper state (0=open, 1=closed).
@@ -183,11 +180,11 @@ class Arm:
             raise ValueError("phi_Cmd must be an iterable of 4 joint angles [rad].")
 
         # If the current command is the same as the previous command, do nothing
-        if np.equal(phi_cmd, self._phi).all():
+        if np.equal(self.phi_cmd, phi_cmd).all():
+            print("phi_cmd is the same as the previous command, do nothing")
             return  # no movement needed
         else:
-            self._phi = phi_cmd
-        self.new_phi_commanded = False
+            self.phi_cmd = phi_cmd
 
         # Optional gripper command
         if gripper_Cmd is not None:
@@ -207,14 +204,14 @@ class Arm:
         # endregion
 
         # Check limits and workspace before sending command to arm will raise ValueError if checks fail
-        self.limit_check(phi_cmd)
-        self.workspace_check(phi_cmd)
+        self.limit_check(self.phi_cmd)
+        self.workspace_check(self.phi_cmd)
 
         # Commands arm to move to desired phi_cmd with gripper and LED states.
         # Currently uses initial internal values for gripper and LED if not specified as an input.
         # Note that speed is not specified in this command.
-        if self.new_phi_commanded:
-            self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
+        self.myArm.read_write_std(phiCMD=self.phi_cmd, grpCMD=self._gripper, baseLED=self._led)
+        print("commanded to phi: ", self.phi_cmd, "pos: ", self.pos_cmd)
 
     # Only checks physical limits of the arm
     def limit_check(self, phi_cmd) -> None:
@@ -235,16 +232,15 @@ class Arm:
 
     # Checks if the arm will run into the table
     def workspace_check(self, phi_cmd) -> None:
-
-        pos_cmd, _ = self.qarm_forward_kinematics(phi_cmd)  # updates self.T04 based on phi_cmd
+        self.pos_cmd, _ = self.qarm_forward_kinematics(phi_cmd)  # updates self.T04 based on phi_cmd
         # Check z position of end-effector to make sure it won't run into the table.
-        if pos_cmd[2] < 0.1:  # keeps z position from being within 0.1 meters of the table
+        if self.pos_cmd[2] < 0.1:  # keeps z position from being within 0.1 meters of the table
             raise ValueError("End-effector z position limit reached. Arm moved to home position.")
 
     def home(self) -> None:
-        self._phi = np.array([0, 0, 0, 0], dtype=np.float64)
+        self.phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)
         self._led = np.array([1, 0, 0], dtype=np.float64)
-        self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
+        self.myArm.read_write_std(phiCMD=self.phi_cmd, grpCMD=self._gripper, baseLED=self._led)
 
     def qarm_forward_kinematics(self, phi):
         """QUANSER_ARM_FPK v 1.0 - 30th August 2020
@@ -389,17 +385,17 @@ class Arm:
 
     @property
     def phi(self):
+        # Due to the given myArm.read_std() not correctly updating the measurements this does not work as intended
+
         self.myArm.read_std()  # updates self.myArm.measJointPosition
-        # Update phi to current state of the arm
-        # print("trying to get phi")
-        self._phi = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64) - self._phi_offset
-        return self._phi
+        self.prev_meas_phi = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64) - self._phi_offset
+        return self.prev_meas_phi
 
     @property
-    def position(self) -> np.ndarray:
+    def pos(self) -> np.ndarray:
         # Update phi to current state of the arm and then calculate position with forward kinematics
-        self._position, self._R = self.qarm_forward_kinematics(self.phi)  # note this will update self._phi as well
-        return self._position
+        self.prev_meas_pos, self._R = self.qarm_forward_kinematics(self.phi)  # note this will update self._phi as well
+        return self.prev_meas_pos
 
     @property
     def R(self) -> np.ndarray:

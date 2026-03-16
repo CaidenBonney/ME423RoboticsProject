@@ -77,11 +77,13 @@ def arm_worker(ballXYZ_queue: queue.Queue, stop_event: threading.Event, ready: t
                     print(arm.phi)
                     continue
                 elif inp == "_phi":
-                    print(arm._phi)
+                    print(arm.prev_meas_phi)
                     continue
                 elif inp == "_phi_offset":
                     print(arm._phi_offset)
                     continue
+                elif inp == "meas":
+                    pass
 
                 print(f"Moving arm with command: {phi_cmd}")
                 arm.move(phi_Cmd=phi_cmd)
