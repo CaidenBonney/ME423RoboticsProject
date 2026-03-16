@@ -27,9 +27,11 @@ class CameraSnapshot:
 class ArmOverlayState:
     phi_cmd: Optional[np.ndarray] = None
     future_robot_points: Optional[np.ndarray] = None  # shape (N, 3)
+    past_robot_points: Optional[np.ndarray] = None # shape (M, 3)
     last_ballXYZ: Optional[np.ndarray] = None
     last_timestamp: Optional[float] = None
-
+    interception_point_ROBOT: Optional[np.ndarray] = None
+    interception_time: Optional[float] = None
 
 class SharedLatest:
     """Thread-safe latest-value container.
@@ -177,7 +179,56 @@ def draw_arm_overlay(
                     10,
                     2,
                 )
-                print(f"Projected future robot point {xyz} to camera pixel ({u}, {v})")   
+                # print(f"Projected future robot point {xyz} to camera pixel ({u}, {v})")   
+            except Exception:
+                pass
+
+    if arm_state is not None and arm_state.interception_point_ROBOT is not None:
+        interception_xyz = arm_state.interception_point_ROBOT
+        if interception_xyz is not None:
+            try:
+                u, v = project_robot_point_to_camera(cam, interception_xyz)
+                cv2.drawMarker(
+                    out,
+                    (int(u), int(v)),
+                    (0, 0, 255),
+                    cv2.MARKER_DIAMOND,
+                    30,
+                    3,
+                )
+                # print(f"Projected interception point {interception_xyz} to camera pixel ({u}, {v})")   
+            except Exception:
+                pass
+    
+    if arm_state is not None and arm_state.interception_point_ROBOT is not None:
+        interception_xyz = arm_state.interception_point_ROBOT
+        if interception_xyz is not None:
+            try:
+                u, v = project_robot_point_to_camera(cam, interception_xyz)
+                cv2.drawMarker(
+                    out,
+                    (int(u), int(v)),
+                    (0, 0, 255),
+                    cv2.MARKER_DIAMOND,
+                    30,
+                    3,
+                )
+                # print(f"Projected interception point {interception_xyz} to camera pixel ({u}, {v})")   
+            except Exception:
+                pass
+    if arm_state is not None and arm_state.past_robot_points is not None:
+        for xyz in np.asarray(arm_state.past_robot_points):
+            try:
+                u, v = project_robot_point_to_camera(cam, xyz)
+                cv2.drawMarker(
+                    out,
+                    (int(u), int(v)),
+                    (0, 0, 255),
+                    cv2.MARKER_STAR,
+                    10,
+                    2,
+                )
+                # print(f"Projected future robot point {xyz} to camera pixel ({u}, {v})")   
             except Exception:
                 pass
 
@@ -243,7 +294,8 @@ def arm_worker(
 
     moved = False
     start = arm.elapsed_time()
-    future_points_drawn = 100
+    future_points_drawn = 20
+    past_points_drawn = 20
     timestep = 20
 
     try:
@@ -255,23 +307,28 @@ def arm_worker(
 
             try:
                 phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found, timestamp)
+                interception_point_ROBOT = arm.interception_point_ROBOT
+                interception_time = arm.interception_time
                 future_pts = []
+                past_pts = []
                 if arm.traj.t.size > 0:
-                    
                     for i in range(future_points_drawn):
                         # t_future = timestamp + i * timestep
                         t_future = arm.traj.t[-1] + i * timestep
-
                         pred = np.asarray(arm.traj.predict_pos(t_future), dtype=np.float64).reshape(3)
                         future_pts.append(pred)
                 future_pts_arr = np.asarray(future_pts, dtype=np.float64)
-
+                # for i in range(past_points_drawn):
+                past_pts = np.asarray(arm.traj.pos[-past_points_drawn:, :], dtype=np.float64)
                 latest_arm_state.set(
                     ArmOverlayState(
                         phi_cmd=np.asarray(phi_cmd, dtype=np.float64).reshape(4),
                         future_robot_points=future_pts_arr,
+                        past_robot_points=past_pts,
                         last_ballXYZ=np.asarray(ballXYZ, dtype=np.float64).reshape(3),
                         last_timestamp=float(timestamp),
+                        interception_point_ROBOT=np.asarray(interception_point_ROBOT, dtype=np.float64).reshape(3) if interception_point_ROBOT is not None else None,
+                        interception_time=float(interception_time) if interception_time is not None else None
                     )
                 )
                 # print(f"ArmOverlayState update duration: {duration2:.4f} seconds")
@@ -282,7 +339,7 @@ def arm_worker(
                     moved = True
 
             except ValueError as e:
-                print(f"Command error: {e}")
+                # print(f"Command error: {e}")
                 arm.home()
             except Exception as e:
                 print(f"arm_worker loop error: {e}")

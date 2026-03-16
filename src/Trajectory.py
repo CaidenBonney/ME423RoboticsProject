@@ -57,10 +57,10 @@ class Trajectory:
             self.pos = np.concatenate([self.pos, pos], axis=0)
 
         # Keep only the most recent window
-        if self.t.size > window_size:
-            self.t = self.t[-window_size:]
-            self.t0 = self.t[0]  # update t0 to the new oldest timestamp for numerical stability
-            self.pos = self.pos[-window_size:, :]
+        # if self.t.size > window_size:
+        #     self.t = self.t[-window_size:]
+        #     self.t0 = self.t[0]  # update t0 to the new oldest timestamp for numerical stability
+        #     self.pos = self.pos[-window_size:, :]
 
         # print("t0: ", self.t0)
         t_shift = (self.t - self.t0)  # [milliseconds] shift by t0 for numerical stability

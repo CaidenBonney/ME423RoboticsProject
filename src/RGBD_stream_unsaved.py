@@ -18,7 +18,6 @@ MARKER_ID = 67
 MARKER_LENGTH_M = 0.07
 ARUCO_DICT = cv2.aruco.DICT_4X4_250
 
-W, H, FPS = 640, 480, 30
 
 NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
 BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
@@ -160,8 +159,6 @@ def robust_depth_at_pixel(depth_frame, u: int, v: int, radius: int) -> float:
 print("RUNNING...")
 warmup_frames = 30
 warmup_frames_count = 0
-fps = 60
-W, H = 640, 480
 warm_up_video_path = "src/videos/warmup_video.mp4"
 
 if os.path.exists(warm_up_video_path):
@@ -193,7 +190,7 @@ while warmup_frames_count < warmup_frames:
         writer.write(frame)
         warmup_frames_count += 1
 writer.release()
-cap.release
+cap.release()
 # Background subtractor to remove static bright objects (like the screw)
 
 bs = cv2.createBackgroundSubtractorMOG2(
@@ -232,8 +229,8 @@ try:
     # configure depth and color streamss
     pipeline = rs.pipeline()
     cfg = rs.config()
-    cfg.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 60)
-    cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 60)
+    cfg.enable_stream(rs.stream.depth, W, H, rs.format.z16, FPS)
+    cfg.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
     profile = pipeline.start(cfg)
 
     align_to = rs.stream.color

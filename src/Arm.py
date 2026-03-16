@@ -38,8 +38,11 @@ class Arm:
 
         self.traj = Trajectory() # initialize empty trajectory
         self.missed_frames = 0 # count the number of frames since the ball was last seen
-        self.missed_frames_max = 10
+        self.missed_frames_max = 20
         self.prev_phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)
+        self.new_phi_commanded = False
+        self.interception_point_ROBOT = None
+        self.interception_time = None
 
         # transformation matrix from end-effector frame to base frame adjusted in qarm_forward_kinematics
         self.T04 = np.identity(4, dtype=np.float64)
@@ -75,7 +78,7 @@ class Arm:
 
         # Solve for times when the fitted z(t) hits the plane z = 0.49.
         pz = self.traj.pz.copy()
-        pz[-1] -= 0.49  # plane of intersection is at z= 0.49
+        pz[-1] -= 0  # plane of intersection is at z= 0.49
         z_roots = np.roots(pz) # UNITS: t_shift [millseconds]
         # print("pz coefficients: ", pz, "z_roots: ", z_roots)
 
@@ -106,9 +109,11 @@ class Arm:
 
 
         ik_xyz = self.traj.predict_pos(t_hit_ms)[:, 0]  # predicted XYZ at the selected time
+        self.interception_point_ROBOT = ik_xyz
+        self.interception_time = t_hit_ms
 
 
-        print("ik_xyz: ", ik_xyz, "t_hit_ms: ", t_hit_ms, "t0: ", self.traj.t0, "case: ", case)
+        # print("ik_xyz: ", ik_xyz, "t_hit_ms: ", t_hit_ms, "t0: ", self.traj.t0, "case: ", case)
 
         # Final frame for IK input is the predicted XYZ.
         ik_pos_cmd = ik_xyz
@@ -140,6 +145,8 @@ class Arm:
         # If no finite 4-joint solution exists, the target is unreachable (or frames are wrong).
         if chosen_phi is None:
             raise ValueError("IK failed: target appears unreachable.")
+        else:
+            print("commanded phi: ", chosen_phi, timestamp)
 
         phi_cmd = np.asarray(chosen_phi, dtype=np.float64)
         self.prev_phi_cmd = phi_cmd
@@ -156,6 +163,7 @@ class Arm:
             return  # no movement needed
         else:
             self._phi = phi_cmd
+        self.new_phi_commanded = False
 
         # Optional gripper command
         if gripper_Cmd is not None:
@@ -181,7 +189,8 @@ class Arm:
         # Commands arm to move to desired phi_cmd with gripper and LED states.
         # Currently uses initial internal values for gripper and LED if not specified as an input.
         # Note that speed is not specified in this command.
-        self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
+        if self.new_phi_commanded:
+            self.myArm.read_write_std(phiCMD=self._phi, grpCMD=self._gripper, baseLED=self._led)
 
     # Only checks physical limits of the arm
     def limit_check(self, phi_cmd) -> None:
