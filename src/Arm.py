@@ -48,7 +48,7 @@ class Arm:
         self.interception_time = None
 
         self.T04 = np.identity(4, dtype=np.float64)  # transformation matrix from end-effector frame to base frame adjusted in qarm_forward_kinematics  # fmt: skip
-        self.L_6 = 0.075  # distance from qarm end-effector center to net end effector center in meters
+        self.L_6 = 0.25  # distance from qarm end-effector center to net end effector center in meters
 
         # Determine offset of initial position to home position for measuring joint angles
         self.home()

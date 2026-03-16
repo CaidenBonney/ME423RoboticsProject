@@ -26,6 +26,7 @@ class CameraSnapshot:
 @dataclass
 class ArmOverlayState:
     phi_cmd: Optional[np.ndarray] = None
+    pos_cmd: Optional[np.ndarray] = None
     future_robot_points: Optional[np.ndarray] = None  # shape (N, 3)
     past_robot_points: Optional[np.ndarray] = None  # shape (M, 3)
     last_ballXYZ: Optional[np.ndarray] = None
@@ -161,6 +162,19 @@ def draw_arm_overlay(
             out,
             f"phi_cmd: [{phi[0]:.3f}, {phi[1]:.3f}, {phi[2]:.3f}, {phi[3]:.3f}]",
             (10, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 0),
+            2,
+            cv2.LINE_AA,
+        )
+
+    if arm_state is not None and arm_state.pos_cmd is not None:
+        pos = np.asarray(arm_state.pos_cmd).reshape(-1)
+        cv2.putText(
+            out,
+            f"pos_cmd: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]",
+            (10, 90),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
             (255, 255, 0),
@@ -309,7 +323,8 @@ def arm_worker(
                 past_pts = np.asarray(arm.traj.pos[-past_points_drawn:, :], dtype=np.float64)
                 latest_arm_state.set(
                     ArmOverlayState(
-                        phi_cmd=np.asarray(phi_cmd, dtype=np.float64).reshape(4),
+                        phi_cmd=np.asarray(arm.phi_cmd, dtype=np.float64).reshape(4),
+                        pos_cmd=np.asarray(arm.pos_cmd, dtype=np.float64).reshape(3),
                         future_robot_points=future_pts_arr,
                         past_robot_points=past_pts,
                         last_ballXYZ=np.asarray(ballXYZ, dtype=np.float64).reshape(3),

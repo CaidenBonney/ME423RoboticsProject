@@ -9,7 +9,7 @@ import math
 
 # ---------------- USER CONFIG ----------------
 MARKER_ID = 67
-# MARKER_LENGTH_M = 0.07 
+# MARKER_LENGTH_M = 0.07
 MARKER_LENGTH_M = 0.1889  # marker side length in meters (0.1889 m = 7.437 inches)
 ARUCO_DICT = cv2.aruco.DICT_4X4_250
 
@@ -38,6 +38,7 @@ WARMUP_FRAMES = 30
 
 CALIBRATION_FILE = "camera_calib.yml"
 
+
 class Camera:
     def __init__(self) -> None:
         self.startTime = time.time()
@@ -62,11 +63,13 @@ class Camera:
         self.tvec_draw = None
         self.R_m_c = None
         self.t_m_c = None
-        self.ArUco2Base_Transformation = np.array([[1, 0, 0, 0.622], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
+        self.ArUco2Base_Transformation = np.array(
+            [[1, 0, 0, 0.622], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64
+        )
         self.ArUco2Base_Transformation_inv = np.linalg.inv(self.ArUco2Base_Transformation)
         # self.Base_ArUco_Transformation = np.array([[1, 0, 0, 0.402], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
         # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, -0.1], [0, -1, 0, 0.010], [0, 0, 0, 1]], dtype=np.float64)
-        # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, 0.05332], [0, -1, 0, -0.10954], [0, 0, 0, 1]], dtype=np.float64) 
+        # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, 0.05332], [0, -1, 0, -0.10954], [0, 0, 0, 1]], dtype=np.float64)
         self.current_frame = np.zeros((640, 480, 3), dtype=np.uint8)
         self.cam_setup()
 
@@ -74,7 +77,7 @@ class Camera:
         return time.time() - self.startTime
 
     def capture_image(self) -> rs.align:
-        """ Captures an RGB and depth frame from the camera. 
+        """Captures an RGB and depth frame from the camera.
         Images are aligned."""
 
         frames = self.pipeline.wait_for_frames()
@@ -84,7 +87,7 @@ class Camera:
         depth_image = np.asarray(depth.get_data(), dtype=np.uint8)
         frame = rgb.get_data()
         frame = np.asanyarray(frame)
-        self.current_frame = np.asanyarray(frame,dtype=np.uint8)
+        self.current_frame = np.asanyarray(frame, dtype=np.uint8)
         # print("current frame set in camera object...")
         return aligned_frames
 
@@ -105,10 +108,10 @@ class Camera:
         self.cam_calibration()
 
     def cam_calibration(self, path: str = "camera_calib.yml") -> None:
-        """ Executes the following camera setup steps:
-            1. Loads the camera calibration file to remove fishey distortion.
-            2. Solves the camera to robot transformation.
-            3. Creates the background subtractor model.
+        """Executes the following camera setup steps:
+        1. Loads the camera calibration file to remove fishey distortion.
+        2. Solves the camera to robot transformation.
+        3. Creates the background subtractor model.
         """
 
         self.camera_matrix, self.dist_coeffs = load_calibration(CALIBRATION_FILE)
@@ -178,8 +181,7 @@ class Camera:
         W: int = 640,
         H: int = 480,
     ) -> None:
-        
-        
+
         # update transformation from camera frame to robot frame, create background model for motion detection
         warmup_frames_count = 0
         if os.path.exists(warm_up_video_path):
@@ -232,6 +234,7 @@ class Camera:
         print("WARMED UP BACKGROUND MODEL...")
         cap.release()
         gc.collect()
+
     pass
 
     def image_processing(self, aligned_frames: rs.align) -> tuple[np.ndarray, bool]:
@@ -262,9 +265,9 @@ class Camera:
             self.score_parts = best["score_parts"]
             cv2.circle(self.current_frame, (self.u, self.v), 5, (255, 0, 0), -1)
             cv2.drawContours(self.current_frame, [best["hull"]], -1, (0, 255, 0), 2)
-            
+
             # cv2.imshow("ball", vis)
-            
+
             # depth -> 3D in camera frame
             self.z = robust_depth_at_pixel(depth, self.u, self.v, BALL_DEPTH_RADIUS_PX)
             if self.z > 0:
@@ -280,11 +283,11 @@ class Camera:
         return (np.asarray([0, 0, 0], dtype=np.float64), found_ball)
 
     def T_Camera_to_RobotBase(self, P_ball_cam: np.ndarray) -> tuple[float, float, float]:
-        """ Transform from camera frame to robot frame 
-        
+        """Transform from camera frame to robot frame
+
         Args:
             P_ball_cam (np.ndarray): 3x1 vector in camera frame (output of deproject)
-        
+
             Returns:
                 xR, yR, zR (float): In robot base frame
         """
@@ -293,15 +296,15 @@ class Camera:
         P_ball_base = self.ArUco2Base_Transformation @ P_ball_ArUco
         xR, yR, zR = P_ball_base[:3, 0]
         return xR, yR, zR
-    
+
     def T_RobotBase_to_Camera(self, XYZR: np.ndarray) -> tuple[int, int]:
-        """ Transform from Robot base frame to camera frame 
-        
+        """Transform from Robot base frame to camera frame
+
         Args:
             XYZR (np.ndarray): 3x1 vector in robot base frame
-        
+
         Returns:
-            u, v, [int] """
+            u, v, [int]"""
         # turn 3x1 vector into 4x1 vector
         P_ball_base = np.append(XYZR, 1.0).reshape(4, 1)
 
@@ -315,13 +318,22 @@ class Camera:
             raise ValueError("T_cam2ArUco_inv is None")
         P_ball_cam = self.T_cam2ArUco_inv @ P_ball_ArUco
         # Project XYZ_cam to pixel coordinates
-        u, v = tuple(rs.rs2_project_point_to_pixel(self.intrinsics, [P_ball_cam[:3, 0].reshape(3,)[i] for i in range(3)])) 
+        u, v = tuple(
+            rs.rs2_project_point_to_pixel(
+                self.intrinsics,
+                [
+                    P_ball_cam[:3, 0].reshape(
+                        3,
+                    )[i]
+                    for i in range(3)
+                ],
+            )
+        )
         return (int(u), int(v))
-    
 
     # Updates the phi_cmd based on the camera's output. For now, just returns a dummy command.
     def capture_and_process(self) -> tuple[Optional[np.ndarray], bool, Optional[float]]:
-        """ Captures an RGB and depth frame from the camera and outputs the ball XYZ (w.r.t base coords)"""
+        """Captures an RGB and depth frame from the camera and outputs the ball XYZ (w.r.t base coords)"""
         # Grab the latest RGBD frames
         RBGD_frames = self.capture_image()
         if RBGD_frames is None:
@@ -331,8 +343,6 @@ class Camera:
 
         # Obtain Ball XYZ from RGBD frame and
         XYZ, ball_found = self.image_processing(RBGD_frames)
-    
-
 
         # XYZ = self.image_processing(input)
 
@@ -342,9 +352,9 @@ class Camera:
         # )
         # print("ball position in Robot Coordinates: ", XYZ)
         return XYZ, ball_found, timestamp
-    
+
     def show_image(self):
-        cv2.waitKey(1) # wait 1 ms. needed to display video feed
+        cv2.waitKey(1)  # wait 1 ms. needed to display video feed
         cv2.imshow("camera_pov", self.current_frame)
 
 
@@ -468,8 +478,8 @@ def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictio
         obj_pts_marker (np.ndarray): The marker corners in object coordinates.
 
     Returns:
-        (ok: Boolean, 
-        Optional[np.ndarray]: Rotation matrix from camera to marker, 
+        (ok: Boolean,
+        Optional[np.ndarray]: Rotation matrix from camera to marker,
         Optional[np.ndarray]: Translation vector from camera to marker,
         Optional[str]: method used,
         Optional[List[np.ndarray]]: all detected corners,
@@ -529,8 +539,8 @@ def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictio
 
 
 def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COLOR, using_bg_sub: bool = True):
-    """ Detects the ball center in the frame using the frame, background subtractor and last detected points.
-    
+    """Detects the ball center in the frame using the frame, background subtractor and last detected points.
+
     Args:
         frame_bgr (np.ndarray): The frame to detect the ball center in.
         bs (cv2.BackgroundSubtractorMOG2): The background subtractor to use.
@@ -538,7 +548,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         ball_color (int): The color of the ball to detect. Use the constants WHITE_BALL_COLOR, ORANGE_BALL_COLOR, or GREEN_BALL_COLOR.
 
     Returns:
-      (found: Boolean, Optional[(u,v, best: dict)], "dict(mask=mask)") """
+      (found: Boolean, Optional[(u,v, best: dict)], "dict(mask=mask)")"""
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
     k5 = np.ones((5, 5), np.uint8)
     # select ball color
@@ -556,7 +566,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
     elif ball_color == GREEN_BALL_COLOR:
         lower_green = (70, 50, 40)
         upper_green = (90, 255, 255)
-        using_bg_sub = True # bg sub seems to hurt green ball detection, so disable for green ball
+        using_bg_sub = True  # bg sub seems to hurt green ball detection, so disable for green ball
 
         color_mask = cv2.inRange(hsv, lower_green, upper_green)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
@@ -582,7 +592,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         mask = cv2.bitwise_and(fg, color_mask)
     else:
         mask = color_mask
-        
+
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     pred = None
@@ -635,11 +645,17 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         # color_score = -90.0 * hue_diff
         color_score = 0.0  # disable color score for now since it seems to hurt more than help; tune weight and thresholds if re-enabling
 
-
-        score = dist_score + circ_score + solid_score + aspect_score+ color_score
+        score = dist_score + circ_score + solid_score + aspect_score + color_score
 
         if best is None or (score > best["score"]):
-            best = dict(score=score, cx=cx, cy=cy, hull=hull, bbox=(x, y, w, h), score_parts=(dist_score, area_score, circ_score, solid_score, aspect_score, color_score))
+            best = dict(
+                score=score,
+                cx=cx,
+                cy=cy,
+                hull=hull,
+                bbox=(x, y, w, h),
+                score_parts=(dist_score, area_score, circ_score, solid_score, aspect_score, color_score),
+            )
 
     if best is None:
         return False, None, dict(mask=mask)
@@ -649,6 +665,7 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
     if len(last_pts) > 10:
         last_pts[:] = last_pts[-10:]
     return True, (u, v, best), dict(mask=mask)
+
 
 def load_calibration(path):
     fs = cv2.FileStorage(path, cv2.FILE_STORAGE_READ)
@@ -670,6 +687,7 @@ def load_calibration(path):
 
     return camera_matrix, dist_coeffs
 
+
 def mean_hue_in_hull(frame_bgr, hull):
     """
     Compute the circular mean hue inside an OpenCV convex hull.
@@ -687,7 +705,7 @@ def mean_hue_in_hull(frame_bgr, hull):
 
     # Convert to HSV
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-    hue = hsv[:, :, 0].astype(np.float32)   # OpenCV hue: 0..179
+    hue = hsv[:, :, 0].astype(np.float32)  # OpenCV hue: 0..179
 
     # Build a binary mask for the hull
     mask = np.zeros(frame_bgr.shape[:2], dtype=np.uint8)
