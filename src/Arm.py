@@ -55,9 +55,14 @@ class Arm:
         self.T04 = np.identity(4, dtype=np.float64)
         self.L_6 = 0.25
 
-        # ── Interceptor instances (set catch_z to your desired catch plane height) ──
-        # Change catch_z here to match your physical setup.
-        _catch_z = 0.10   # [m] height of catch plane above robot base
+        # ── Interceptor instances ──────────────────────────────────────────────
+        # catch_z: the z-height [m] in robot-base frame where you want to catch
+        # the ball.  Set this to a height the ball actually passes through.
+        # From camera logs the ball sits near z=0.38 m, so 0.30 m is a safe
+        # catch plane that is (a) below the ball's starting height so the
+        # descending arc crosses it, and (b) above the 0.10 m workspace floor.
+        # Tune this to match your physical setup.
+        _catch_z = 0.30   # [m]
 
         self.ballistic_interceptor   = BallisticInterceptor(catch_z=_catch_z)
         self.kalman_tracker          = KalmanBallTracker(catch_z=_catch_z)
@@ -122,12 +127,13 @@ class Arm:
         return chosen_phi
 
     def _apply_phi_cmd(self, phi_cmd: np.ndarray, intercept: np.ndarray) -> np.ndarray:
-        """Store state and return a resolved phi command.
-        Does NOT call move() — the arm_worker loop in main is responsible for
-        that, exactly as it was before these methods existed.
+        """Store pos_cmd/prev_phi_cmd and return phi_cmd for the worker to pass to move().
+
+        Critically does NOT set self.phi_cmd — that is move()'s job.  If we set
+        self.phi_cmd here, move() sees an identical value on the very next call
+        and returns early without sending the hardware command (the dot guard).
         """
         phi_cmd = np.asarray(phi_cmd, dtype=np.float64)
-        self.phi_cmd = phi_cmd.copy()
         self.pos_cmd = intercept.copy()
         self.prev_phi_cmd = phi_cmd.copy()
         return phi_cmd

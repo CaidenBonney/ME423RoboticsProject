@@ -173,8 +173,10 @@ class BallisticInterceptor:
             -0.5*G*s^2 + vz*s + (z0 - catch_z) = 0
 
         Returns the smallest future absolute time when ball is at catch_z,
-        or None if no valid future root exists.
+        or None if no valid future root exists or root is unreasonably far away.
         """
+        MAX_LOOKAHEAD_MS = 5000.0   # [ms] reject roots more than 5 s in the future
+
         a = -0.5 * G_MMS2
         b = self._vz
         c = self._z0 - self.catch_z
@@ -188,7 +190,7 @@ class BallisticInterceptor:
         s2 = (-b - sqrt_disc) / (2 * a)
 
         now_shift = now_ms - self._t0
-        future = [s for s in (s1, s2) if s > now_shift]
+        future = [s for s in (s1, s2) if now_shift < s <= now_shift + MAX_LOOKAHEAD_MS]
 
         if not future:
             return None

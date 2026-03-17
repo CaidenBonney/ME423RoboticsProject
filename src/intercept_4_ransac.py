@@ -199,6 +199,8 @@ class RansacBallFitter:
         ])
 
     def _solve_catch_plane(self, now_ms: float) -> Optional[float]:
+        MAX_LOOKAHEAD_MS = 5000.0   # reject roots more than 5 s ahead
+
         _, _, _, _, vz, z0 = self._params
         a = -0.5 * G_MMS2
         b = vz
@@ -212,7 +214,7 @@ class RansacBallFitter:
         now_shift = now_ms - self._t0
         s1 = (-b + sqrt_disc) / (2 * a)
         s2 = (-b - sqrt_disc) / (2 * a)
-        future = [s for s in (s1, s2) if s > now_shift]
+        future = [s for s in (s1, s2) if now_shift < s <= now_shift + MAX_LOOKAHEAD_MS]
         if not future:
             return None
         return float(self._t0 + min(future))

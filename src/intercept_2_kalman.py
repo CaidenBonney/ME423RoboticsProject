@@ -188,6 +188,8 @@ class KalmanBallTracker:
         z(t_prev + s)  = pz + vz*s - 0.5*G*s^2  =  catch_z
         =>  -0.5*G*s² + vz*s + (pz - catch_z) = 0
         """
+        MAX_LOOKAHEAD_MS = 5000.0   # reject roots more than 5 s ahead
+
         pz = self.x[2]
         vz = self.x[5]
 
@@ -203,7 +205,7 @@ class KalmanBallTracker:
         now_shift = now_ms - self._t_prev   # how far ahead is "now" from last update
         s1 = (-b + sqrt_disc) / (2 * a)
         s2 = (-b - sqrt_disc) / (2 * a)
-        future = [s for s in (s1, s2) if s > now_shift]
+        future = [s for s in (s1, s2) if now_shift < s <= now_shift + MAX_LOOKAHEAD_MS]
         if not future:
             return None
 

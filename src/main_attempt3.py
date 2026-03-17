@@ -171,6 +171,7 @@ def camera_worker(
     while not stop_event.is_set():
         try:
             ballXYZ, ball_found, timestamp = cam.capture_and_process()
+            
 
             snapshot = CameraSnapshot(
                 frame=cam.current_frame.copy() if cam.current_frame is not None else np.zeros((480, 640, 3), dtype=np.uint8),

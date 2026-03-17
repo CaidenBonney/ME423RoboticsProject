@@ -105,8 +105,10 @@ class EWMAInterceptor:
     def _solve_catch_plane(self) -> Optional[float]:
         """
         Solve z_now + vz*t - 0.5*g*t^2 = catch_z for t > 0.
-        Returns smallest positive real root, or None.
+        Returns smallest positive real root within 5 s, or None.
         """
+        MAX_LOOKAHEAD_MS = 5000.0   # reject roots more than 5 s ahead
+
         pz = self._pos_now[2]
         vz = self._vel_ewma[2]
 
@@ -121,7 +123,7 @@ class EWMAInterceptor:
         sqrt_disc = np.sqrt(disc)
         s1 = (-b + sqrt_disc) / (2 * a)
         s2 = (-b - sqrt_disc) / (2 * a)
-        future = [s for s in (s1, s2) if s > 0]
+        future = [s for s in (s1, s2) if 0 < s <= MAX_LOOKAHEAD_MS]
         if not future:
             return None
         return float(min(future))
