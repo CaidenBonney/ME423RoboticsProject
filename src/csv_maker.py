@@ -416,7 +416,7 @@ def main() -> None:
     latest_cam_snapshot = SharedLatest()
     latest_arm_state = SharedLatest()
     ballXYZ_queue = LatestQueue()
-    csv_logger = CSVLogger("camera_xyz_log.csv")
+    csv_logger = CSVLogger("camera_xyz_log_4.csv")
 
     cam_ready = threading.Event()
     arm_ready = threading.Event()
