@@ -90,52 +90,112 @@ def draw_arm_overlay(
 
     if snap is not None and snap.ball_found and snap.ballXYZ is not None:
         x, yy, z = np.asarray(snap.ballXYZ, dtype=np.float64).reshape(3)
-        cv2.putText(out, f"ballXYZ: [{x:.3f}, {yy:.3f}, {z:.3f}]", (10, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(
+            out,
+            f"ballXYZ: [{x:.3f}, {yy:.3f}, {z:.3f}]",
+            (10, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
         y += 30
 
     if arm_state is not None:
-        cv2.putText(out, f"intercept_valid: {arm_state.intercept_valid}", (10, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                    (0, 255, 0) if arm_state.intercept_valid else (0, 0, 255),
-                    2, cv2.LINE_AA)
+        cv2.putText(
+            out,
+            f"intercept_valid: {arm_state.intercept_valid}",
+            (10, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 255, 0) if arm_state.intercept_valid else (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
         y += 28
 
         if arm_state.intercept_reason:
-            cv2.putText(out, f"reason: {arm_state.intercept_reason}", (10, y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(
+                out,
+                f"reason: {arm_state.intercept_reason}",
+                (10, y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
             y += 28
 
     if arm_state is not None and arm_state.phi_cmd is not None:
         phi = np.asarray(arm_state.phi_cmd, dtype=np.float64).reshape(4)
-        cv2.putText(out, f"phi_cmd: [{phi[0]:.3f}, {phi[1]:.3f}, {phi[2]:.3f}, {phi[3]:.3f}]",
-                    (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 2, cv2.LINE_AA)
+        cv2.putText(
+            out,
+            f"phi_cmd: [{phi[0]:.3f}, {phi[1]:.3f}, {phi[2]:.3f}, {phi[3]:.3f}]",
+            (10, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 0),
+            2,
+            cv2.LINE_AA,
+        )
         y += 30
 
     if arm_state is not None and arm_state.pos_cmd is not None:
         pos = np.asarray(arm_state.pos_cmd, dtype=np.float64).reshape(3)
-        cv2.putText(out, f"pos_cmd: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]",
-                    (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 2, cv2.LINE_AA)
+        cv2.putText(
+            out,
+            f"pos_cmd: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]",
+            (10, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 0),
+            2,
+            cv2.LINE_AA,
+        )
         y += 30
 
     if arm_state is not None and arm_state.interception_time is not None:
-        cv2.putText(out, f"intercept_ms: {arm_state.interception_time:.1f}", (10, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 255), 2, cv2.LINE_AA)
+        cv2.putText(
+            out,
+            f"intercept_ms: {arm_state.interception_time:.1f}",
+            (10, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 200, 255),
+            2,
+            cv2.LINE_AA,
+        )
         y += 30
 
     if arm_state is not None and arm_state.future_robot_points is not None:
         for xyz in np.asarray(arm_state.future_robot_points, dtype=np.float64):
             try:
                 u, v = project_robot_point_to_camera(cam, xyz)
-                cv2.drawMarker(out, (int(u), int(v)), (255, 255, 255), cv2.MARKER_CROSS, 10, 2)
+                cv2.drawMarker(
+                    out,
+                    (int(u), int(v)),
+                    (255, 255, 255),
+                    cv2.MARKER_CROSS,
+                    10,
+                    2,
+                )
             except Exception:
                 pass
 
     if arm_state is not None and arm_state.interception_point_ROBOT is not None:
         try:
-            xyz = np.asarray(arm_state.interception_point_ROBOT, dtype=np.float64).reshape(3)
-            u, v = project_robot_point_to_camera(cam, xyz)
-            cv2.drawMarker(out, (int(u), int(v)), (0, 0, 255), cv2.MARKER_DIAMOND, 30, 3)
+            interception_xyz = np.asarray(arm_state.interception_point_ROBOT, dtype=np.float64).reshape(3)
+            u, v = project_robot_point_to_camera(cam, interception_xyz)
+            cv2.drawMarker(
+                out,
+                (int(u), int(v)),
+                (0, 0, 255),
+                cv2.MARKER_DIAMOND,
+                30,
+                3,
+            )
         except Exception:
             pass
 
@@ -143,7 +203,14 @@ def draw_arm_overlay(
         for xyz in np.asarray(arm_state.past_robot_points, dtype=np.float64):
             try:
                 u, v = project_robot_point_to_camera(cam, xyz)
-                cv2.drawMarker(out, (int(u), int(v)), (0, 0, 255), cv2.MARKER_STAR, 10, 2)
+                cv2.drawMarker(
+                    out,
+                    (int(u), int(v)),
+                    (0, 0, 255),
+                    cv2.MARKER_STAR,
+                    10,
+                    2,
+                )
             except Exception:
                 pass
 
@@ -204,10 +271,6 @@ def arm_worker(
     moved = False
     start = arm.elapsed_time()
 
-    future_points_drawn = 30
-    past_points_drawn = 20
-    timestep_ms = 25.0
-
     try:
         while not stop_event.is_set() and arm.myArm.status:
             try:
@@ -218,26 +281,8 @@ def arm_worker(
             try:
                 phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found, timestamp)
 
-                future_pts = []
-                if arm.traj.t.size > 0:
-                    t_ref = float(arm.traj.t[-1])
-                    for i in range(future_points_drawn):
-                        t_future = t_ref + i * timestep_ms
-                        pred = np.asarray(arm.traj.predict_pos(t_future), dtype=np.float64).reshape(3)
-                        if np.all(np.isfinite(pred)):
-                            future_pts.append(pred)
-
-                future_pts_arr = (
-                    np.asarray(future_pts, dtype=np.float64).reshape(-1, 3)
-                    if len(future_pts) > 0
-                    else np.empty((0, 3), dtype=np.float64)
-                )
-
-                past_pts = (
-                    np.asarray(arm.traj.pos[-past_points_drawn:, :], dtype=np.float64).reshape(-1, 3)
-                    if arm.traj.pos.size > 0
-                    else np.empty((0, 3), dtype=np.float64)
-                )
+                future_pts_arr = arm.get_future_points(n_points=30, step_ms=25.0)
+                past_pts = arm.get_past_points(n_points=20)
 
                 latest_arm_state.set(
                     ArmOverlayState(

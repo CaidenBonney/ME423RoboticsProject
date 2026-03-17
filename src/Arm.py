@@ -1,18 +1,21 @@
+# Special QArm library imports
 from typing import Optional
 
 from pal.products.qarm import QArm
 from hal.products.qarm import QArmUtilities
 
+# Standard library imports
 import time
 import numpy as np
 
-from Trajectory import Trajectory
-from intercept_utils import (
-    InterceptResult,
-    choose_future_root,
-    estimate_time_to_move_xy_ms,
-    solve_quadratic_real,
-)
+from kalman_ballistic import BallisticKalmanFilter, KalmanInterceptResult
+
+
+def estimate_time_to_move_xy_ms(current_xy: np.ndarray, target_xy: np.ndarray, v_xy_max_mps: float = 1.0) -> float:
+    current_xy = np.asarray(current_xy, dtype=np.float64).reshape(2)
+    target_xy = np.asarray(target_xy, dtype=np.float64).reshape(2)
+    d = np.linalg.norm(target_xy - current_xy)
+    return 1000.0 * float(d / max(v_xy_max_mps, 1e-6))
 
 
 class Arm:
@@ -34,25 +37,21 @@ class Arm:
         self._gripper = np.array(0.0, dtype=np.float64)
         self._led = np.array([1, 0, 1], dtype=np.float64)
 
-        self._pos_q_max = 100
-        self.traj = Trajectory()
-        self.traj_number = 0
-
-        self.missed_frames = 0
-        self.missed_frames_max = 200
-
         self.prev_phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)
         self.interception_point_ROBOT = None
         self.interception_time = None
         self.last_intercept_valid = False
         self.last_intercept_reason = "startup"
 
-        # permissive interception settings
+        self.kf = BallisticKalmanFilter()
+        self.missed_frames = 0
+        self.missed_frames_max = 80
+
         self.catch_z = 0.26
         self.min_lead_time_ms = 10.0
-        self.v_xy_arm_max_mps = 2.2
-        self.max_prediction_horizon_ms = 2200.0
-        self.catch_scan_step_ms = 20.0
+        self.max_prediction_horizon_ms = 1800.0
+        self.v_xy_arm_max_mps = 2.0
+        self.reachability_slack = 1.8
 
         self.T04 = np.identity(4, dtype=np.float64)
         self.L_6 = 0.25
@@ -69,84 +68,31 @@ class Arm:
                 break
             time.sleep(0.05)
 
-        self._phi_offset = np.array(
-            self.myArm.measJointPosition[0:4], dtype=np.float64, copy=True
-        )
+        self._phi_offset = np.array(self.myArm.measJointPosition[0:4], dtype=np.float64, copy=True)
 
     def elapsed_time(self) -> float:
         return time.time() - self.startTime
-
-    def print_measurement_check(self, label: str = "measurement check") -> None:
-        self.myArm.read_std()
-        raw_phi = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64)
-        joint_speed = np.asarray(self.myArm.measJointSpeed[0:4], dtype=np.float64)
-        rel_phi = raw_phi - self._phi_offset
-        print(label)
-        print("raw measured phi:", raw_phi)
-        print("stored home offset:", self._phi_offset)
-        print("home-relative phi:", rel_phi)
-        print("measured joint speed:", joint_speed)
 
     def _clear_intercept_only(self) -> None:
         self.interception_point_ROBOT = None
         self.interception_time = None
         self.last_intercept_valid = False
 
-    def _reset_intercept_state(self, reason: str = "") -> None:
+    def _reset_tracking(self, reason: str = "") -> None:
         if reason:
-            print(f"Resetting trajectory/intercept state: {reason}")
-        self.traj = Trajectory()
-        self.traj_number += 1
+            print(f"Resetting Kalman tracker: {reason}")
+        self.kf.reset()
         self._clear_intercept_only()
         self.last_intercept_reason = reason if reason else "reset"
 
-    def _best_future_candidate(self, timestamp_ms: float) -> InterceptResult:
-        if self.traj.t.size < 3:
-            return InterceptResult(valid=False, reason="not enough samples")
-
-        px = np.asarray(self.traj.px, dtype=np.float64).copy()
-        py = np.asarray(self.traj.py, dtype=np.float64).copy()
-        pz = np.asarray(self.traj.pz, dtype=np.float64).copy()
-
-        t_now_shift_ms = float(timestamp_ms - self.traj.t0)
-
-        # First try exact future root
-        roots_ms = solve_quadratic_real(pz[0], pz[1], pz[2] - self.catch_z)
-        t_hit_shift_ms = choose_future_root(
-            roots_ms,
-            t_now=t_now_shift_ms,
-            min_lead=self.min_lead_time_ms,
+    def _predict_intercept(self) -> KalmanInterceptResult:
+        result = self.kf.predict_plane_intercept(
+            z_catch=self.catch_z,
+            min_lead_ms=self.min_lead_time_ms,
+            max_horizon_ms=self.max_prediction_horizon_ms,
         )
-
-        # If no exact root, pick the future time that gets closest to catch_z
-        if t_hit_shift_ms is None:
-            future_times = np.arange(
-                t_now_shift_ms + self.min_lead_time_ms,
-                t_now_shift_ms + self.max_prediction_horizon_ms,
-                self.catch_scan_step_ms,
-                dtype=np.float64,
-            )
-            if future_times.size == 0:
-                return InterceptResult(valid=False, reason="no future times to scan")
-
-            z_vals = np.polyval(pz, future_times)
-            idx = int(np.argmin(np.abs(z_vals - self.catch_z)))
-            t_hit_shift_ms = float(future_times[idx])
-            best_z = float(z_vals[idx])
-
-            # require at least being reasonably close to the plane
-            if abs(best_z - self.catch_z) > 0.10:
-                return InterceptResult(valid=False, reason="no future z-plane crossing")
-
-        if (t_hit_shift_ms - t_now_shift_ms) > self.max_prediction_horizon_ms:
-            return InterceptResult(valid=False, reason="prediction too far in future")
-
-        x_hit = np.polyval(px, t_hit_shift_ms)
-        y_hit = np.polyval(py, t_hit_shift_ms)
-        z_hit = np.polyval(pz, t_hit_shift_ms)
-
-        # clamp commanded catch point to the chosen plane
-        xyz_hit = np.array([x_hit, y_hit, self.catch_z], dtype=np.float64)
+        if not result.valid or result.xyz_hit is None:
+            return result
 
         try:
             current_xy = np.asarray(self.pos[:2], dtype=np.float64).reshape(2)
@@ -155,39 +101,22 @@ class Arm:
 
         move_time_ms = estimate_time_to_move_xy_ms(
             current_xy=current_xy,
-            target_xy=xyz_hit[:2],
+            target_xy=result.xyz_hit[:2],
             v_xy_max_mps=self.v_xy_arm_max_mps,
         )
-        available_time_ms = t_hit_shift_ms - t_now_shift_ms
+        available_time_ms = float(result.t_hit_ms - self.kf.last_t_ms)
 
-        # relaxed reachability: allow catches that are within 1.8x estimated move time
-        if move_time_ms > 1.8 * max(available_time_ms, 1.0):
-            return InterceptResult(
+        if move_time_ms > self.reachability_slack * max(available_time_ms, 1.0):
+            return KalmanInterceptResult(
                 valid=False,
-                t_hit_ms=float(self.traj.t0 + t_hit_shift_ms),
-                xyz_hit=xyz_hit,
-                xy_hit=xyz_hit[:2],
+                t_hit_ms=result.t_hit_ms,
+                xyz_hit=result.xyz_hit,
+                xy_hit=result.xy_hit,
+                confidence=result.confidence,
                 reason="arm cannot reach in time",
             )
 
-        tau = self.traj.t - self.traj.t0
-        pred = np.column_stack([
-            np.polyval(px, tau),
-            np.polyval(py, tau),
-            np.polyval(pz, tau),
-        ])
-        residual = self.traj.pos - pred
-        rmse = float(np.sqrt(np.mean(np.sum(residual * residual, axis=1))))
-        confidence = float(np.exp(-8.0 * rmse))
-
-        return InterceptResult(
-            valid=True,
-            t_hit_ms=float(self.traj.t0 + t_hit_shift_ms),
-            xyz_hit=xyz_hit,
-            xy_hit=xyz_hit[:2],
-            confidence=confidence,
-            reason="ok",
-        )
+        return result
 
     def ballXYZ_to_phi_cmd(self, XYZ: np.ndarray, ball_found: bool, timestamp: float) -> Optional[np.ndarray]:
         self.last_intercept_valid = False
@@ -195,11 +124,9 @@ class Arm:
         if not ball_found or ball_found is None:
             self.missed_frames += 1
             self._clear_intercept_only()
-            self.last_intercept_reason = f"tracking missed ({self.missed_frames})"
-
-            # do not immediately wipe trajectory; keep it alive much longer
+            self.last_intercept_reason = f"tracking missed ({self.missed_frames}/{self.missed_frames_max})"
             if self.missed_frames >= self.missed_frames_max:
-                self._reset_intercept_state(reason="lost tracking")
+                self._reset_tracking(reason="lost tracking")
             return None
 
         self.missed_frames = 0
@@ -210,9 +137,8 @@ class Arm:
             self.last_intercept_reason = "invalid XYZ input"
             return None
 
-        self.traj.update_trajectory(timestamp, xyz_meas, self._pos_q_max)
-
-        result = self._best_future_candidate(float(timestamp))
+        self.kf.update(float(timestamp), xyz_meas)
+        result = self._predict_intercept()
 
         if not result.valid or result.xyz_hit is None:
             self._clear_intercept_only()
@@ -259,12 +185,18 @@ class Arm:
         )
         return phi_cmd
 
+    def get_future_points(self, n_points: int = 30, step_ms: float = 25.0) -> np.ndarray:
+        return self.kf.predict_future_points(n_points=n_points, step_ms=step_ms)
+
+    def get_past_points(self, n_points: int = 20) -> np.ndarray:
+        return self.kf.measured_points(n_points=n_points)
+
     def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None) -> bool:
         input_phi_cmd = np.asarray(phi_Cmd, dtype=np.float64)
         if input_phi_cmd.shape != (4,):
             raise ValueError("phi_Cmd must be an iterable of 4 joint angles [rad].")
 
-        r = 0.03
+        r = 0.05
 
         if np.equal(self.phi_cmd, input_phi_cmd).all():
             return False
