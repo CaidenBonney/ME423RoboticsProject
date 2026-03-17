@@ -181,9 +181,14 @@ class Arm:
         if phi_cmd.shape != (4,):
             raise ValueError("phi_Cmd must be an iterable of 4 joint angles [rad].")
 
+        r = 0.05
+
         # If the current command is the same as the previous command, do nothing
         if np.equal(self.phi_cmd, phi_cmd).all():
             print("phi_cmd is the same as the previous command, do nothing")
+            return  # no movement needed
+        elif np.linalg.norm(phi_cmd - self.phi_cmd) <= r:
+            print(f"phi_cmd is within {r} of the previous command, do nothing")
             return  # no movement needed
         else:
             self.phi_cmd = phi_cmd
@@ -224,13 +229,13 @@ class Arm:
         #       Wrist:        ± 160 deg
 
         if phi_cmd[0] < -np.radians(170) or phi_cmd[0] > np.radians(170):
-            raise ValueError("Base Phi limit reached. Arm moved to home position.")
+            raise ValueError(f"Base Phi limit reached ({np.degrees(phi_cmd[0])} ). Arm moved to home position.")
         elif phi_cmd[1] < -np.radians(85) or phi_cmd[1] > np.radians(85):
-            raise ValueError("Shoulder Phi limit reached. Arm moved to home position.")
+            raise ValueError(f"Shoulder Phi limit reached ({np.degrees(phi_cmd[1])}). Arm moved to home position.")
         elif phi_cmd[2] < -np.radians(95) or phi_cmd[2] > np.radians(75):
-            raise ValueError("Elbow Phi limit reached. Arm moved to home position.")
+            raise ValueError(f"Elbow Phi limit reached ({np.degrees(phi_cmd[2])}). Arm moved to home position.")
         elif phi_cmd[3] < -np.radians(160) or phi_cmd[3] > np.radians(160):
-            raise ValueError("Wrist Phi limit reached. Arm moved to home position.")
+            raise ValueError(f"Wrist Phi limit reached ({np.degrees(phi_cmd[3])}). Arm moved to home position.")
 
     # Checks if the arm will run into the table
     def workspace_check(self, phi_cmd) -> None:
