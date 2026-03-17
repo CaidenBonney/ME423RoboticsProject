@@ -1,0 +1,14 @@
+.[ballistic] tracking lost, resetting (traj #583)
+.[ballistic] waiting for enough points or no future root
+.[ballistic] waiting for enough points or no future root
+..Fitted quadratic coeffs: a=-0.0000, b=0.0016, c=0.3868
+[ballistic] intercept=[ 1.429 -0.025  0.1  ]
+[ballistic] IK failed for intercept point
+..Fitted quadratic coeffs: a=0.0000, b=0.0014, c=0.3876
+[ballistic] intercept=[ 1.21  -0.042  0.1  ]
+[ballistic] IK failed for intercept point
+.Fitted quadratic coeffs: a=-0.0000, b=0.0015, c=0.3870
+batched z fit coeffs: [-4.90500000e-06  1.46422698e-03  3.87152184e-01]
+[ballistic] intercept=[ 1.142 -0.05   0.1  ]
+[ballistic] IK failed for intercept point
+.Fitted quadratic coeffs: a=-0.0000, b=0.0015, c=0.3869
