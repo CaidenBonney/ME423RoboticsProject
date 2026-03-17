@@ -118,3 +118,48 @@ class Trajectory:
 
         if a <= 0.0:
             return q
+
+        # Constrained boundary solution: a = 0, fit z = b t + c
+        X1 = np.column_stack((t_shift, np.ones_like(t_shift)))
+        bc, _, _, _ = np.linalg.lstsq(X1, z, rcond=None)
+        b1, c1 = bc
+        return np.array([0.0, b1, c1])
+
+    def predict_intercept(self, z_plane: float, t_now: float):
+        """
+        Predict where the trajectory will intersect z = z_plane.
+
+        Args:
+            z_plane : desired z height [m]
+            t_now   : current timestamp [ms]
+
+        Returns:
+            (xyz_hit, t_hit) or (None, None) if no valid future intercept exists
+        """
+
+        if self.t.size < 3:
+            return None, None
+
+        # Copy polynomial and shift by plane
+        pz = self.pz.copy()
+        pz[-1] -= z_plane
+
+        roots = np.roots(pz)
+
+        # Keep real roots only
+        real_dt = roots[np.abs(roots.imag) < 1e-8].real
+
+        if real_dt.size == 0:
+            return None, None
+
+        t_now_shift = t_now - self.t0
+        fut_dt = real_dt[real_dt >= t_now_shift]
+
+        if fut_dt.size == 0:
+            return None, None
+
+        dt_hit = np.max(fut_dt)
+        t_hit = self.t0 + dt_hit
+        xyz_hit = self.predict_pos(t_hit)[:, 0]
+
+        return xyz_hit, t_hit

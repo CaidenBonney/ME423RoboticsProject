@@ -91,42 +91,53 @@ class Arm:
 
         self.traj.update_trajectory(timestamp, XYZ, self._pos_q_max)
 
+        # COMMENTED OUT CODE BELOW
         # Solve for times when the fitted z(t) hits the plane z = 0.49.
-        pz = self.traj.pz.copy()
-        pz[-1] -= 0.49  # plane of intersection is at z= 0.49
-        z_roots = np.roots(pz)  # UNITS: t_shift [millseconds]
-        # print("pz coefficients: ", pz, "z_roots: ", z_roots)
+        # pz = self.traj.pz.copy()
+        # pz[-1] -= 0.49  # plane of intersection is at z= 0.49
+        # z_roots = np.roots(pz)  # UNITS: t_shift [millseconds]
+        # # print("pz coefficients: ", pz, "z_roots: ", z_roots)
 
-        # Keep real roots only, then prefer future intersections if any exist.
-        real_dt = z_roots[np.abs(z_roots.imag) < 1e-8].real  # [milliseconds]
+        # # Keep real roots only, then prefer future intersections if any exist.
+        # real_dt = z_roots[np.abs(z_roots.imag) < 1e-8].real  # [milliseconds]
 
-        # real_dt: seconds after t0
-        # timestamp: milliseconds (from frame)
-        # self.traj.t0: milliseconds (from first point in traj
+        # # real_dt: seconds after t0
+        # # timestamp: milliseconds (from frame)
+        # # self.traj.t0: milliseconds (from first point in traj
 
-        t_now_shift = timestamp - self.traj.t0  # time right now (this frame's time) [seconds after t0]
-        fut_dt = real_dt[real_dt >= t_now_shift]  # future [milliseconds] after t0 when trajectory hits z-plane
-        # print("z_roots: ", z_roots, ",real_dt: ", real_dt, "fut_dt: ", fut_dt)
-        # print("timestamp: ", timestamp, "traj.t[-1]: ", self.traj.t[-1], "fut_dt: ", fut_dt)
+        # t_now_shift = timestamp - self.traj.t0  # time right now (this frame's time) [seconds after t0]
+        # fut_dt = real_dt[real_dt >= t_now_shift]  # future [milliseconds] after t0 when trajectory hits z-plane
+        # # print("z_roots: ", z_roots, ",real_dt: ", real_dt, "fut_dt: ", fut_dt)
+        # # print("timestamp: ", timestamp, "traj.t[-1]: ", self.traj.t[-1], "fut_dt: ", fut_dt)
 
-        if fut_dt.size > 0:
-            t_hit_ms = timestamp + np.max(fut_dt)  # Farthest future hit
-            case = 1
-        # elif real_dt.size > 0:
-        #     t_hit_s = self.traj.t0 + np.max(real_dt)  # most recent past hit
+        # if fut_dt.size > 0:
+        #     t_hit_ms = timestamp + np.max(fut_dt)  # Farthest future hit
+        #     case = 1
+        # # elif real_dt.size > 0:
+        # #     t_hit_s = self.traj.t0 + np.max(real_dt)  # most recent past hit
+        # # else:
+        # #     t_hit_s = timestamp  # no roots -> just use "now"
+
         # else:
-        #     t_hit_s = timestamp  # no roots -> just use "now"
+        #     # t_hit_s = timestamp  # no future roots -> just use "now"
+        #     case = 3
+        #     return self.prev_phi_cmd
 
-        else:
-            # t_hit_s = timestamp  # no future roots -> just use "now"
-            case = 3
-            return self.prev_phi_cmd
-
-        ik_xyz = self.traj.predict_pos(t_hit_ms)[:, 0]  # predicted XYZ at the selected time
-        self.interception_point_ROBOT = ik_xyz
-        self.interception_time = t_hit_ms
+        # ik_xyz = self.traj.predict_pos(t_hit_ms)[:, 0]  # predicted XYZ at the selected time
+        # self.interception_point_ROBOT = ik_xyz
+        # self.interception_time = t_hit_ms
 
         # print("ik_xyz: ", ik_xyz, "t_hit_ms: ", t_hit_ms, "t0: ", self.traj.t0, "case: ", case)
+        # COMMENTED OUT CODE ABOVE
+
+        # NEW CODE BELOW
+        ik_xyz, t_hit_ms = self.traj.predict_intercept(0.49, timestamp)
+        if ik_xyz is None:
+            return self.prev_phi_cmd
+
+        self.interception_point_ROBOT = ik_xyz
+        self.interception_time = t_hit_ms
+        # NEW CODE ABOVE
 
         # Final frame for IK input is the predicted XYZ.
         ik_pos_cmd = ik_xyz
