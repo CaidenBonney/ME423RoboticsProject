@@ -70,7 +70,7 @@ class Camera:
         # self.Base_ArUco_Transformation = np.array([[1, 0, 0, 0.402], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
         # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, -0.1], [0, -1, 0, 0.010], [0, 0, 0, 1]], dtype=np.float64)
         # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, 0.05332], [0, -1, 0, -0.10954], [0, 0, 0, 1]], dtype=np.float64)
-        self.current_frame = np.zeros((640, 480, 3), dtype=np.uint8)
+        self.current_frame = np.zeros((W, H, 3), dtype=np.uint8)
         self.cam_setup()
 
     def elapsed_time(self) -> float:
@@ -96,8 +96,8 @@ class Camera:
         # configure depth and color streamss
         self.pipeline = rs.pipeline()
         cfg = rs.config()
-        cfg.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, FPS)
-        cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, FPS)
+        cfg.enable_stream(rs.stream.depth, W, H, rs.format.z16, FPS)
+        cfg.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
         self.profile = self.pipeline.start(cfg)
         align_to = rs.stream.color
         self.align = rs.align(align_to)
@@ -178,8 +178,8 @@ class Camera:
         warm_up_video_path: str = "src/videos/warmup_video.mp4",
         warmup_frames: int = 45,
         fps: int = FPS,
-        W: int = 640,
-        H: int = 480,
+        W: int = W,
+        H: int = H,
     ) -> None:
 
         # update transformation from camera frame to robot frame, create background model for motion detection

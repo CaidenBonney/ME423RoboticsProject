@@ -348,7 +348,7 @@ def arm_worker(
                 future_pts_arr = np.asarray(future_pts, dtype=np.float64)
                 scaled_vel = past_pts[-1, :3] - past_pts[0, :3] if len(past_pts) >= 2 else np.zeros(3)
                 y_sign = np.sign(scaled_vel[1]) if scaled_vel[1] != 0 else 0
-                ballXYZ_with_offset = np.asarray(ballXYZ, dtype=np.float64).reshape(3) + np.array([0.0, y_sign * 0.1, 0.0])
+                ballXYZ_with_offset = np.asarray(ballXYZ, dtype=np.float64).reshape(3) + np.array([0.0, y_sign*0.12, 0.0])
                 phi_cmd = arm.ballXYZ_to_phi_cmd_no_traj_fixed_x(ballXYZ_with_offset, ball_found, timestamp, fixed_x=0.6)
                 interception_point_ROBOT = arm.interception_point_ROBOT
                 interception_time = arm.interception_time
@@ -519,7 +519,7 @@ def main() -> None:
 
                 # cv2.imshow("camera_pov", camera_view)
                 cv2.imshow("arm_pov", arm_view)
-
+                # pass
             key = cv2.waitKey(1)
             if key == 27:  # ESC
                 break
