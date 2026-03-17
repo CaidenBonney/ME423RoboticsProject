@@ -27,20 +27,17 @@ class CameraSnapshot:
 class ArmOverlayState:
     phi_cmd: Optional[np.ndarray] = None
     pos_cmd: Optional[np.ndarray] = None
-    future_robot_points: Optional[np.ndarray] = None   # shape (N, 3)
-    past_robot_points: Optional[np.ndarray] = None     # shape (M, 3)
+    future_robot_points: Optional[np.ndarray] = None
+    past_robot_points: Optional[np.ndarray] = None
     last_ballXYZ: Optional[np.ndarray] = None
     last_timestamp: Optional[float] = None
     interception_point_ROBOT: Optional[np.ndarray] = None
     interception_time: Optional[float] = None
+    intercept_reason: str = ""
+    intercept_valid: bool = False
 
 
 class SharedLatest:
-    """
-    Thread-safe latest-value container.
-    Stores only the newest sample, which is what you want in a real-time pipeline.
-    """
-
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._value = None
@@ -55,11 +52,6 @@ class SharedLatest:
 
 
 class LatestQueue:
-    """
-    Small queue that keeps only the most recent item.
-    Useful when camera runs faster than arm updates.
-    """
-
     def __init__(self) -> None:
         self._q: queue.Queue = queue.Queue(maxsize=1)
 
@@ -80,67 +72,11 @@ class LatestQueue:
 
 
 def project_robot_point_to_camera(cam: Camera, xyz_robot: np.ndarray) -> tuple[int, int]:
-    """
-    Handles either Camera.T_RobotBase_to_Camera(x, y, z)
-    or Camera.T_RobotBase_to_Camera(XYZR).
-    """
     xyz_robot = np.asarray(xyz_robot, dtype=np.float64).reshape(3)
-
     try:
         return cam.T_RobotBase_to_Camera(xyz_robot)
     except TypeError:
         return cam.T_RobotBase_to_Camera(xyz_robot[0], xyz_robot[1], xyz_robot[2])
-
-
-def draw_camera_overlay(frame: np.ndarray, snap: CameraSnapshot) -> np.ndarray:
-    out = frame.copy()
-
-    if snap.ball_found and snap.u is not None and snap.v is not None:
-        cv2.circle(out, (int(snap.u), int(snap.v)), 5, (255, 0, 0), -1)
-
-    y = 30
-
-    if snap.ball_found and snap.ballXYZ is not None:
-        x, yy, z = np.asarray(snap.ballXYZ, dtype=np.float64).reshape(3)
-        cv2.putText(
-            out,
-            f"ballXYZ: [{x:.3f}, {yy:.3f}, {z:.3f}]",
-            (10, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (0, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
-        y += 30
-
-    if snap.u is not None and snap.v is not None and snap.z is not None:
-        cv2.putText(
-            out,
-            f"u,v,z,score: ({snap.u}, {snap.v}, {snap.z:.3f}, {0.0 if snap.score is None else snap.score:.3f})",
-            (10, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            (255, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
-        y += 28
-
-    if snap.score_parts is not None and len(snap.score_parts) >= 6:
-        sp = snap.score_parts
-        cv2.putText(
-            out,
-            f"circ {sp[2]:.3f}, solid {sp[3]:.3f}, aspect {sp[4]:.3f}, color {sp[5]:.3f}",
-            (10, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
-            (255, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
-
-    return out
 
 
 def draw_arm_overlay(
@@ -150,122 +86,64 @@ def draw_arm_overlay(
     arm_state: Optional[ArmOverlayState],
 ) -> np.ndarray:
     out = frame.copy()
-
     y = 30
 
     if snap is not None and snap.ball_found and snap.ballXYZ is not None:
         x, yy, z = np.asarray(snap.ballXYZ, dtype=np.float64).reshape(3)
-        cv2.putText(
-            out,
-            f"ballXYZ: [{x:.3f}, {yy:.3f}, {z:.3f}]",
-            (10, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (0, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
+        cv2.putText(out, f"ballXYZ: [{x:.3f}, {yy:.3f}, {z:.3f}]", (10, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
         y += 30
+
+    if arm_state is not None:
+        cv2.putText(out, f"intercept_valid: {arm_state.intercept_valid}", (10, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                    (0, 255, 0) if arm_state.intercept_valid else (0, 0, 255),
+                    2, cv2.LINE_AA)
+        y += 28
+
+        if arm_state.intercept_reason:
+            cv2.putText(out, f"reason: {arm_state.intercept_reason}", (10, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+            y += 28
 
     if arm_state is not None and arm_state.phi_cmd is not None:
         phi = np.asarray(arm_state.phi_cmd, dtype=np.float64).reshape(4)
-        cv2.putText(
-            out,
-            f"phi_cmd: [{phi[0]:.3f}, {phi[1]:.3f}, {phi[2]:.3f}, {phi[3]:.3f}]",
-            (10, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            (255, 255, 0),
-            2,
-            cv2.LINE_AA,
-        )
+        cv2.putText(out, f"phi_cmd: [{phi[0]:.3f}, {phi[1]:.3f}, {phi[2]:.3f}, {phi[3]:.3f}]",
+                    (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 2, cv2.LINE_AA)
         y += 30
 
     if arm_state is not None and arm_state.pos_cmd is not None:
         pos = np.asarray(arm_state.pos_cmd, dtype=np.float64).reshape(3)
-        cv2.putText(
-            out,
-            f"pos_cmd: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]",
-            (10, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            (255, 255, 0),
-            2,
-            cv2.LINE_AA,
-        )
-        y += 30
-
-    if snap is not None and snap.timestamp is not None:
-        cv2.putText(
-            out,
-            f"timestamp_ms: {snap.timestamp:.1f}",
-            (10, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            (255, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
+        cv2.putText(out, f"pos_cmd: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]",
+                    (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 2, cv2.LINE_AA)
         y += 30
 
     if arm_state is not None and arm_state.interception_time is not None:
-        cv2.putText(
-            out,
-            f"intercept_ms: {arm_state.interception_time:.1f}",
-            (10, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            (0, 200, 255),
-            2,
-            cv2.LINE_AA,
-        )
+        cv2.putText(out, f"intercept_ms: {arm_state.interception_time:.1f}", (10, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 255), 2, cv2.LINE_AA)
         y += 30
 
-    # Draw future predicted trajectory points
     if arm_state is not None and arm_state.future_robot_points is not None:
         for xyz in np.asarray(arm_state.future_robot_points, dtype=np.float64):
             try:
                 u, v = project_robot_point_to_camera(cam, xyz)
-                cv2.drawMarker(
-                    out,
-                    (int(u), int(v)),
-                    (255, 255, 255),
-                    cv2.MARKER_CROSS,
-                    10,
-                    2,
-                )
+                cv2.drawMarker(out, (int(u), int(v)), (255, 255, 255), cv2.MARKER_CROSS, 10, 2)
             except Exception:
                 pass
 
-    # Draw chosen interception point
     if arm_state is not None and arm_state.interception_point_ROBOT is not None:
         try:
-            interception_xyz = np.asarray(arm_state.interception_point_ROBOT, dtype=np.float64).reshape(3)
-            u, v = project_robot_point_to_camera(cam, interception_xyz)
-            cv2.drawMarker(
-                out,
-                (int(u), int(v)),
-                (0, 0, 255),
-                cv2.MARKER_DIAMOND,
-                30,
-                3,
-            )
+            xyz = np.asarray(arm_state.interception_point_ROBOT, dtype=np.float64).reshape(3)
+            u, v = project_robot_point_to_camera(cam, xyz)
+            cv2.drawMarker(out, (int(u), int(v)), (0, 0, 255), cv2.MARKER_DIAMOND, 30, 3)
         except Exception:
             pass
 
-    # Draw past measured robot points
     if arm_state is not None and arm_state.past_robot_points is not None:
         for xyz in np.asarray(arm_state.past_robot_points, dtype=np.float64):
             try:
                 u, v = project_robot_point_to_camera(cam, xyz)
-                cv2.drawMarker(
-                    out,
-                    (int(u), int(v)),
-                    (0, 0, 255),
-                    cv2.MARKER_STAR,
-                    10,
-                    2,
-                )
+                cv2.drawMarker(out, (int(u), int(v)), (0, 0, 255), cv2.MARKER_STAR, 10, 2)
             except Exception:
                 pass
 
@@ -326,24 +204,20 @@ def arm_worker(
     moved = False
     start = arm.elapsed_time()
 
-    future_points_drawn = 20
+    future_points_drawn = 30
     past_points_drawn = 20
-    timestep_ms = 20.0
+    timestep_ms = 25.0
 
     try:
         while not stop_event.is_set() and arm.myArm.status:
             try:
-                ballXYZ, ball_found, timestamp = ballXYZ_queue.get(timeout=0.02)
+                ballXYZ, ball_found, timestamp = ballXYZ_queue.get(timeout=0.05)
             except queue.Empty:
                 continue
 
             try:
                 phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found, timestamp)
 
-                interception_point_ROBOT = arm.interception_point_ROBOT
-                interception_time = arm.interception_time
-
-                # Build future trajectory points for overlay from the fitted trajectory
                 future_pts = []
                 if arm.traj.t.size > 0:
                     t_ref = float(arm.traj.t[-1])
@@ -374,17 +248,21 @@ def arm_worker(
                         last_ballXYZ=np.asarray(ballXYZ, dtype=np.float64).reshape(3),
                         last_timestamp=float(timestamp),
                         interception_point_ROBOT=(
-                            np.asarray(interception_point_ROBOT, dtype=np.float64).reshape(3)
-                            if interception_point_ROBOT is not None
+                            np.asarray(arm.interception_point_ROBOT, dtype=np.float64).reshape(3)
+                            if arm.interception_point_ROBOT is not None
                             else None
                         ),
-                        interception_time=float(interception_time) if interception_time is not None else None,
+                        interception_time=float(arm.interception_time) if arm.interception_time is not None else None,
+                        intercept_reason=arm.last_intercept_reason,
+                        intercept_valid=arm.last_intercept_valid,
                     )
                 )
 
-                if phi_cmd is not None and not moved:
-                    arm.move(phi_Cmd=phi_cmd)
-                    moved = True
+                has_fresh_intercept = arm.last_intercept_valid and phi_cmd is not None
+                if has_fresh_intercept and not moved:
+                    sent = arm.move(phi_Cmd=phi_cmd)
+                    if sent:
+                        moved = True
 
             except ValueError as e:
                 print(f"Command error: {e}")
@@ -410,101 +288,10 @@ def arm_worker(
         stop_event.set()
 
 
-def manual_control_arm_worker(
-    latest_cam_snapshot: SharedLatest,
-    latest_arm_state: SharedLatest,
-    ballXYZ_queue: LatestQueue,
-    stop_event: threading.Event,
-    ready: threading.Event,
-) -> None:
-    arm = Arm()
-    ready.set()
-
-    moved = False
-    start = arm.elapsed_time()
-
-    test_pose_1 = np.array([0.2, 0.0, 0.0, 0.0], dtype=np.float64)
-    test_pose_2 = np.array([0.35, -0.2, 0.15, 0.0], dtype=np.float64)
-
-    try:
-        phi_cmd = test_pose_1.copy()
-
-        while not stop_event.is_set() and arm.myArm.status:
-            try:
-                if not moved:
-                    inp = input("test input: ")
-
-                    if inp == "home":
-                        arm.home()
-                        time.sleep(1.5)
-                        arm.print_measurement_check("after moving home")
-                        continue
-                    elif inp == "test1":
-                        phi_cmd = test_pose_1.copy()
-                    elif inp == "test2":
-                        phi_cmd = test_pose_2.copy()
-                    elif inp == "check":
-                        arm.print_measurement_check("manual measurement check")
-                        continue
-                    elif inp == "phi":
-                        print(arm.phi)
-                        continue
-                    elif inp == "_phi":
-                        print(arm.prev_meas_phi)
-                        continue
-                    elif inp == "_phi_offset":
-                        print(arm._phi_offset)
-                        continue
-                    elif len(inp.split(",")) == 4:
-                        inp_ls = inp.split(",")
-                        phi_cmd = np.array(
-                            [
-                                float(inp_ls[0]),
-                                float(inp_ls[1]),
-                                float(inp_ls[2]),
-                                float(inp_ls[3]),
-                            ],
-                            dtype=np.float64,
-                        )
-                    else:
-                        print("Unrecognized input.")
-                        continue
-
-                    print(f"moving arm with command: {phi_cmd}")
-                    arm.move(phi_Cmd=phi_cmd)
-                    time.sleep(1.5)
-                    arm.print_measurement_check(f"after moving to {phi_cmd}")
-                    moved = True
-
-            except ValueError as e:
-                print(f"Command error: {e}, phi_cmd: {phi_cmd}")
-                try:
-                    arm.home()
-                except Exception as e2:
-                    print(f"home() error after manual command failure: {e2}")
-            except EOFError:
-                break
-            except Exception as e:
-                print(f"manual_control_arm_worker loop error: {e}")
-
-            if (arm.elapsed_time() - start) > arm.sampleTime and moved:
-                moved = False
-                start = start + arm.sampleTime
-
-    finally:
-        try:
-            arm.myArm.terminate()
-        except Exception as e:
-            print(f"Terminate error: {e}")
-
-        stop_event.set()
-
-
 def main() -> None:
     stop_event = threading.Event()
 
-    cam = Camera()   # use camera-driven interception
-    # cam = None     # optional manual mode
+    cam = Camera()
 
     latest_cam_snapshot = SharedLatest()
     latest_arm_state = SharedLatest()
@@ -521,7 +308,6 @@ def main() -> None:
 
     arm_thread = threading.Thread(
         target=arm_worker,
-        # target=manual_control_arm_worker,
         args=(latest_cam_snapshot, latest_arm_state, ballXYZ_queue, stop_event, arm_ready),
         daemon=False,
     )
@@ -542,7 +328,7 @@ def main() -> None:
                 cv2.imshow("arm_pov", arm_view)
 
             key = cv2.waitKey(1)
-            if key == 27:  # ESC
+            if key == 27:
                 break
 
             time.sleep(0.001)

@@ -1,10 +1,8 @@
-# Special QArm library imports
 from typing import Optional
 
 from pal.products.qarm import QArm
 from hal.products.qarm import QArmUtilities
 
-# Standard library imports
 import time
 import numpy as np
 
@@ -19,14 +17,12 @@ from intercept_utils import (
 
 class Arm:
     def __init__(self) -> None:
-        # Internal variables from basic position mode py files
         self.startTime = time.time()
         self.sampleRate = 200
         self.sampleTime = 1 / self.sampleRate
         self.myArm = QArm(hardware=1)
         self.myArmUtilities = QArmUtilities()
 
-        # Internal variables for current state of the arm
         self.prev_meas_phi = np.array([0, 0, 0, 0], dtype=np.float64)
         self.prev_meas_pos = np.array([0, 0, 0], dtype=np.float64)
 
@@ -35,37 +31,34 @@ class Arm:
 
         self._phi_dot = np.array([0, 0, 0, 0], dtype=np.float64)
         self._R = np.identity(3, dtype=np.float64)
-        self._gripper = np.array(0.0, dtype=np.float64)  # scalar float, not 1-element array
+        self._gripper = np.array(0.0, dtype=np.float64)
         self._led = np.array([1, 0, 1], dtype=np.float64)
 
         self._pos_q_max = 100
-        self._pos_q = np.empty((self._pos_q_max, 3), dtype=np.float64)
-        self._time_q = np.empty(self._pos_q_max, dtype=np.float64)
-        self._q_write_idx = 0
-        self._q_count = 0
-
-        # Intercept / trajectory settings
         self.traj = Trajectory()
         self.traj_number = 0
+
         self.missed_frames = 0
-        self.missed_frames_max = 20
+        self.missed_frames_max = 200
+
         self.prev_phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)
         self.interception_point_ROBOT = None
         self.interception_time = None
+        self.last_intercept_valid = False
+        self.last_intercept_reason = "startup"
 
-        # Catch plane and arm timing assumptions
-        self.catch_z = 0.10               # meters in robot base frame
-        self.min_lead_time_ms = 80.0      # require at least this much future lead
-        self.v_xy_arm_max_mps = 1.0       # rough reachability estimate
-        self.max_prediction_horizon_ms = 1200.0
+        # permissive interception settings
+        self.catch_z = 0.26
+        self.min_lead_time_ms = 10.0
+        self.v_xy_arm_max_mps = 2.2
+        self.max_prediction_horizon_ms = 2200.0
+        self.catch_scan_step_ms = 20.0
 
         self.T04 = np.identity(4, dtype=np.float64)
-        self.L_6 = 0.25  # distance from qarm end-effector center to net center
+        self.L_6 = 0.25
 
-        # Determine offset of initial position to home position for measuring joint angles
         self.home()
 
-        # Wait for arm to settle at home
         vel_tol = 0.02
         settle_timeout_s = 5.0
         settle_start = time.time()
@@ -94,52 +87,67 @@ class Arm:
         print("home-relative phi:", rel_phi)
         print("measured joint speed:", joint_speed)
 
+    def _clear_intercept_only(self) -> None:
+        self.interception_point_ROBOT = None
+        self.interception_time = None
+        self.last_intercept_valid = False
+
     def _reset_intercept_state(self, reason: str = "") -> None:
         if reason:
             print(f"Resetting trajectory/intercept state: {reason}")
         self.traj = Trajectory()
         self.traj_number += 1
-        self.interception_point_ROBOT = None
-        self.interception_time = None
+        self._clear_intercept_only()
+        self.last_intercept_reason = reason if reason else "reset"
 
-    def _predict_intercept(self, timestamp_ms: float, xyz_meas: np.ndarray) -> InterceptResult:
-        """
-        Reachability-aware ballistic intercept on a fixed catch-z plane.
-
-        Uses self.traj's fitted x(t), y(t), z(t), all in milliseconds.
-        """
-        self.traj.update_trajectory(timestamp_ms, xyz_meas, self._pos_q_max)
-
-        if self.traj.t.size < 5:
+    def _best_future_candidate(self, timestamp_ms: float) -> InterceptResult:
+        if self.traj.t.size < 3:
             return InterceptResult(valid=False, reason="not enough samples")
 
-        pz = np.asarray(self.traj.pz, dtype=np.float64).copy()
         px = np.asarray(self.traj.px, dtype=np.float64).copy()
         py = np.asarray(self.traj.py, dtype=np.float64).copy()
+        pz = np.asarray(self.traj.pz, dtype=np.float64).copy()
 
         t_now_shift_ms = float(timestamp_ms - self.traj.t0)
 
-        # Solve z(t_shift_ms) = catch_z
+        # First try exact future root
         roots_ms = solve_quadratic_real(pz[0], pz[1], pz[2] - self.catch_z)
-
-        # Keep only future roots with minimum lead time
         t_hit_shift_ms = choose_future_root(
             roots_ms,
             t_now=t_now_shift_ms,
             min_lead=self.min_lead_time_ms,
         )
-        if t_hit_shift_ms is None:
-            return InterceptResult(valid=False, reason="no future z-plane crossing")
 
-        # Avoid absurdly far predictions
+        # If no exact root, pick the future time that gets closest to catch_z
+        if t_hit_shift_ms is None:
+            future_times = np.arange(
+                t_now_shift_ms + self.min_lead_time_ms,
+                t_now_shift_ms + self.max_prediction_horizon_ms,
+                self.catch_scan_step_ms,
+                dtype=np.float64,
+            )
+            if future_times.size == 0:
+                return InterceptResult(valid=False, reason="no future times to scan")
+
+            z_vals = np.polyval(pz, future_times)
+            idx = int(np.argmin(np.abs(z_vals - self.catch_z)))
+            t_hit_shift_ms = float(future_times[idx])
+            best_z = float(z_vals[idx])
+
+            # require at least being reasonably close to the plane
+            if abs(best_z - self.catch_z) > 0.10:
+                return InterceptResult(valid=False, reason="no future z-plane crossing")
+
         if (t_hit_shift_ms - t_now_shift_ms) > self.max_prediction_horizon_ms:
             return InterceptResult(valid=False, reason="prediction too far in future")
 
         x_hit = np.polyval(px, t_hit_shift_ms)
         y_hit = np.polyval(py, t_hit_shift_ms)
+        z_hit = np.polyval(pz, t_hit_shift_ms)
+
+        # clamp commanded catch point to the chosen plane
         xyz_hit = np.array([x_hit, y_hit, self.catch_z], dtype=np.float64)
 
-        # Simple reachability gate
         try:
             current_xy = np.asarray(self.pos[:2], dtype=np.float64).reshape(2)
         except Exception:
@@ -152,7 +160,8 @@ class Arm:
         )
         available_time_ms = t_hit_shift_ms - t_now_shift_ms
 
-        if move_time_ms > available_time_ms:
+        # relaxed reachability: allow catches that are within 1.8x estimated move time
+        if move_time_ms > 1.8 * max(available_time_ms, 1.0):
             return InterceptResult(
                 valid=False,
                 t_hit_ms=float(self.traj.t0 + t_hit_shift_ms),
@@ -161,18 +170,15 @@ class Arm:
                 reason="arm cannot reach in time",
             )
 
-        # Confidence from fit residuals
         tau = self.traj.t - self.traj.t0
-        pred = np.column_stack(
-            [
-                np.polyval(px, tau),
-                np.polyval(py, tau),
-                np.polyval(pz, tau),
-            ]
-        )
+        pred = np.column_stack([
+            np.polyval(px, tau),
+            np.polyval(py, tau),
+            np.polyval(pz, tau),
+        ])
         residual = self.traj.pos - pred
         rmse = float(np.sqrt(np.mean(np.sum(residual * residual, axis=1))))
-        confidence = float(np.exp(-10.0 * rmse))
+        confidence = float(np.exp(-8.0 * rmse))
 
         return InterceptResult(
             valid=True,
@@ -184,44 +190,40 @@ class Arm:
         )
 
     def ballXYZ_to_phi_cmd(self, XYZ: np.ndarray, ball_found: bool, timestamp: float) -> Optional[np.ndarray]:
-        """
-        Converts a detected ball position to joint angles for interception.
+        self.last_intercept_valid = False
 
-        Inputs:
-            XYZ       : Detected ball position in 3D space w.r.t. QArm base (meters)
-            ball_found: Boolean indicating if the ball was detected in the current frame
-            timestamp : Frame timestamp in milliseconds
-
-        Returns:
-            phi_cmd: Joint angles [rad] for interception, or previous command if no valid intercept exists
-        """
         if not ball_found or ball_found is None:
             self.missed_frames += 1
+            self._clear_intercept_only()
+            self.last_intercept_reason = f"tracking missed ({self.missed_frames})"
+
+            # do not immediately wipe trajectory; keep it alive much longer
             if self.missed_frames >= self.missed_frames_max:
                 self._reset_intercept_state(reason="lost tracking")
-            return self.prev_phi_cmd
+            return None
 
         self.missed_frames = 0
 
         xyz_meas = np.asarray(XYZ, dtype=np.float64).reshape(3)
         if not np.all(np.isfinite(xyz_meas)):
-            print("Invalid XYZ input; holding previous command.")
-            return self.prev_phi_cmd
+            self._clear_intercept_only()
+            self.last_intercept_reason = "invalid XYZ input"
+            return None
 
-        # Update intercept predictor
-        result = self._predict_intercept(timestamp_ms=float(timestamp), xyz_meas=xyz_meas)
+        self.traj.update_trajectory(timestamp, xyz_meas, self._pos_q_max)
+
+        result = self._best_future_candidate(float(timestamp))
 
         if not result.valid or result.xyz_hit is None:
-            self.interception_point_ROBOT = None
-            self.interception_time = None
+            self._clear_intercept_only()
+            self.last_intercept_reason = result.reason
             print(f"No valid intercept: {result.reason}")
-            return self.prev_phi_cmd
+            return None
 
         ik_xyz = np.asarray(result.xyz_hit, dtype=np.float64).reshape(3)
         self.interception_point_ROBOT = ik_xyz
         self.interception_time = float(result.t_hit_ms)
 
-        # Compute IK at predicted intercept
         ik_all_solns, ik_soln = self.qarm_inverse_kinematics(ik_xyz, 0.0, self.phi)
 
         phi_seed = np.asarray(self.phi, dtype=np.float64)
@@ -241,46 +243,42 @@ class Arm:
                 chosen_phi = fallback_phi
 
         if chosen_phi is None:
-            print("IK failed for predicted intercept; holding previous command.")
-            return self.prev_phi_cmd
+            self._clear_intercept_only()
+            self.last_intercept_reason = "IK failed"
+            print("IK failed for predicted intercept; no fresh command.")
+            return None
 
         phi_cmd = np.asarray(chosen_phi, dtype=np.float64)
         self.prev_phi_cmd = phi_cmd
+        self.last_intercept_valid = True
+        self.last_intercept_reason = "ok"
+
         print(
             f"Intercept OK: xyz={ik_xyz}, t_hit_ms={self.interception_time:.1f}, "
             f"phi_cmd={phi_cmd}, conf={result.confidence:.3f}"
         )
         return phi_cmd
 
-    def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None) -> None:
-        """
-        Commands the arm to move to the desired joint angles with optional gripper and LED states.
-        Checks for physical limits and workspace constraints before sending command to the arm.
-        """
+    def move(self, phi_Cmd, gripper_Cmd=None, led_Cmd=None) -> bool:
         input_phi_cmd = np.asarray(phi_Cmd, dtype=np.float64)
         if input_phi_cmd.shape != (4,):
             raise ValueError("phi_Cmd must be an iterable of 4 joint angles [rad].")
 
-        r = 0.05
+        r = 0.03
 
-        # If same/similar as previous command, do nothing
         if np.equal(self.phi_cmd, input_phi_cmd).all():
-            print("phi_cmd is the same as the previous command, do nothing")
-            return
+            return False
         elif np.linalg.norm(input_phi_cmd - self.phi_cmd) <= r:
-            print(f"phi_cmd is within {r} of the previous command, do nothing")
-            return
+            return False
         else:
             self.phi_cmd = input_phi_cmd
 
-        # Optional gripper command
         if gripper_Cmd is not None:
             gripper_cmd = float(gripper_Cmd)
             if not (0.0 <= gripper_cmd <= 1.0):
                 raise ValueError("gripper_Cmd must be between 0 and 1.")
             self._gripper = np.asarray(gripper_cmd, dtype=np.float64)
 
-        # Optional led command
         if led_Cmd is not None:
             led_cmd = np.asarray(led_Cmd, dtype=np.float64)
             if led_cmd.shape != (3,):
@@ -289,16 +287,16 @@ class Arm:
                 raise ValueError("Each led_Cmd value must be between 0 and 1.")
             self._led = led_cmd
 
-        # Limit and workspace checks
         try:
             self.limit_check(self.phi_cmd)
             self.workspace_check(self.phi_cmd)
         except ValueError as e:
             print(f"Error occurred: {e}")
-            return
+            return False
 
         self.myArm.read_write_std(phiCMD=self.phi_cmd, grpCMD=self._gripper, baseLED=self._led)
         print("commanded to phi:", self.phi_cmd, "pos:", self.pos_cmd)
+        return True
 
     def limit_check(self, phi_cmd) -> None:
         if phi_cmd[0] < -np.radians(170) or phi_cmd[0] > np.radians(170):
@@ -321,9 +319,6 @@ class Arm:
         self.myArm.read_write_std(phiCMD=self.phi_cmd, grpCMD=self._gripper, baseLED=self._led)
 
     def qarm_forward_kinematics(self, phi):
-        """
-        QUANSER_ARM_FPK v 1.0 - 30th August 2020
-        """
         theta = phi.copy()
         theta[0] = phi[0]
         theta[1] = phi[1] + self.myArmUtilities.BETA - np.pi / 2
@@ -341,13 +336,9 @@ class Arm:
 
         p4 = self.T04[0:3, 3]
         R04 = self.T04[0:3, 0:3]
-
         return p4, R04
 
     def qarm_inverse_kinematics(self, p, gamma, phi_prev):
-        """
-        QUANSER_ARM_IPK v 1.0 - 31st August 2020
-        """
         theta = np.zeros((4, 4), dtype=np.float64)
         phi = np.zeros((4, 4), dtype=np.float64)
 
@@ -370,17 +361,17 @@ class Arm:
 
         A, C, H, D1, D2, F = inv_kin_setup(p)
 
-        theta[2, 0] = 2 * np.arctan2(C + np.sqrt(C**2 - F**2), F)
-        theta[2, 1] = 2 * np.arctan2(C - np.sqrt(C**2 - F**2), F)
-        theta[2, 2] = 2 * np.arctan2(C + np.sqrt(C**2 - F**2), F)
-        theta[2, 3] = 2 * np.arctan2(C - np.sqrt(C**2 - F**2), F)
+        root_term = np.sqrt(np.maximum(C**2 - F**2, 0.0))
+        theta[2, 0] = 2 * np.arctan2(C + root_term, F)
+        theta[2, 1] = 2 * np.arctan2(C - root_term, F)
+        theta[2, 2] = 2 * np.arctan2(C + root_term, F)
+        theta[2, 3] = 2 * np.arctan2(C - root_term, F)
 
         theta[1, 0] = solve_case_C_j2(theta[2, 0], A, C, D1, H)
         theta[1, 1] = solve_case_C_j2(theta[2, 1], A, C, D1, H)
         theta[1, 2] = solve_case_C_j2(theta[2, 2], A, C, D2, H)
         theta[1, 3] = solve_case_C_j2(theta[2, 3], A, C, D2, H)
 
-        # fmt: off
         theta[0, 0] = np.arctan2(
             p[1] / (self.myArmUtilities.LAMBDA_2 * np.cos(theta[1, 0]) - (self.myArmUtilities.LAMBDA_3 + self.L_6) * np.sin(theta[1, 0] + theta[2, 0])),
             p[0] / (self.myArmUtilities.LAMBDA_2 * np.cos(theta[1, 0]) - (self.myArmUtilities.LAMBDA_3 + self.L_6) * np.sin(theta[1, 0] + theta[2, 0]))
@@ -397,7 +388,6 @@ class Arm:
             p[1] / (self.myArmUtilities.LAMBDA_2 * np.cos(theta[1, 3]) - (self.myArmUtilities.LAMBDA_3 + self.L_6) * np.sin(theta[1, 3] + theta[2, 3])),
             p[0] / (self.myArmUtilities.LAMBDA_2 * np.cos(theta[1, 3]) - (self.myArmUtilities.LAMBDA_3 + self.L_6) * np.sin(theta[1, 3] + theta[2, 3]))
         )
-        # fmt: on
 
         phi[0, :] = theta[0, :]
         phi[1, :] = theta[1, :] - self.myArmUtilities.BETA + np.pi / 2
