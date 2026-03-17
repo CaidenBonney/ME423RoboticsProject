@@ -15,6 +15,8 @@ class Trajectory:
         self.t = np.array([])  # timestamps of observed points (milliseconds)
         self.pos = np.array([0, 0, 0]).reshape(3, 1)
         self.points_since_update = 5  # count how many points have been added since the last trajectory update, used to determine when to update the trajectory fit
+        self.pz_buffer = []
+        self.pz_buffer_size = 3
 
     def predict_pos(self, tt: float | np.ndarray) -> np.ndarray:
         """Position at time tt (milliseconds). Returns (3,) for scalar tt or (3,N) for array."""
@@ -44,7 +46,7 @@ class Trajectory:
         vz = np.polyval(np.polyder(self.pz), t_shift)
         return np.vstack([vx, vy, vz])
 
-    def update_trajectory(self, t: np.ndarray, pos: np.ndarray, window_size: int, update_freq: int = 5) -> None:
+    def update_trajectory(self, t: np.ndarray, pos: np.ndarray, window_size: int, update_freq: int = 0) -> None:
         # t is the timestamp of the frame in which the point was detected in global time (milliseconds)
         t = np.asarray(t).reshape(-1)
         pos = np.asarray(pos).reshape(-1, 3)
@@ -81,7 +83,7 @@ class Trajectory:
             self.py = np.array([0.0, self.pos[0, 1]])
 
         if self.t.size >= 3:
-            if self.points_since_update >= 0:
+            # if self.points_since_update >= 3:
                 # # self.pz = np.polyfit(t_shift, self.pos[:, 2],
                 # self.pz = sp.curve_fit(lambda t, a, b, c: a * t**2 + b * t + c, t_shift, self.pos[:, 2])[
                 #     0
@@ -89,14 +91,10 @@ class Trajectory:
                 # self.points_since_update = 0
                 # print("z fit coeffs: ", self.pz)
                 
+            if self.points_since_update >= 0:
                 new_pz = self._fit_concave_down_quadratic(t_shift, self.pos[:, 2])
-                if new_pz is not None:
-                    self.pz = new_pz
-                
+                self._update_pz_batch(new_pz)
                 self.points_since_update = 0
-                print("z fit coeffs:", self.pz)
-
-
             else:
                 self.points_since_update += 1
         elif self.t.size >= 1:
@@ -116,5 +114,17 @@ class Trajectory:
         q, _, _, _ = np.linalg.lstsq(X2, z, rcond=None)
         a, b, c = q
 
-        if a <= 0.0:
-            return q
+        q[0] = min(q[0], -0.5*9.81/1_000_000)  # enforce a <= 0 constraint
+        print(f"Fitted quadratic coeffs: a={a:.4f}, b={b:.4f}, c={c:.4f}")
+        return q
+
+    def _update_pz_batch(self, new_pz: np.ndarray) -> None:
+        """
+        Collect raw fits, then update self.pz to their average and flush buffer at specified size.
+        """
+        self.pz_buffer.append(new_pz.copy())
+
+        if len(self.pz_buffer) == self.pz_buffer_size:
+            self.pz = np.mean(np.stack(self.pz_buffer, axis=0), axis=0)
+            self.pz_buffer.clear()
+            print("batched z fit coeffs:", self.pz)

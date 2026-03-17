@@ -88,12 +88,17 @@ class Arm:
 
         # Default IK target is the most recent measurement.
         ik_xyz = xyz_meas
-
         self.traj.update_trajectory(timestamp, XYZ, self._pos_q_max)
-
         # Solve for times when the fitted z(t) hits the plane z = 0.49.
+        if self.traj.t.size < 3:
+            # Not enough points to fit a parabola yet, so just use the most recent measurement for IK.
+            print("Not enough points to fit parabola, using most recent measurement for IK.")
+            return self.prev_phi_cmd
+        else:
+            print("Fitting parabola,-----------------------------------------")
+        
         pz = self.traj.pz.copy()
-        pz[-1] -= 0.49  # plane of intersection is at z= 0.49
+        pz[-1] -= 0.1  # plane of intersection is at z= 0.49
         z_roots = np.roots(pz)  # UNITS: t_shift [millseconds]
         # print("pz coefficients: ", pz, "z_roots: ", z_roots)
 
@@ -109,18 +114,17 @@ class Arm:
         # print("z_roots: ", z_roots, ",real_dt: ", real_dt, "fut_dt: ", fut_dt)
         # print("timestamp: ", timestamp, "traj.t[-1]: ", self.traj.t[-1], "fut_dt: ", fut_dt)
 
-        if fut_dt.size > 0:
-            t_hit_ms = timestamp + np.max(fut_dt)  # Farthest future hit
-            case = 1
+        if fut_dt.size == 0:
+            # t_hit_s = timestamp  # no future roots -> just use "now"
+            self.interception_point_ROBOT = None
+            self.interception_time = None
+            return self.prev_phi_cmd
+        t_hit_ms = self.traj.t0[0] + np.min(fut_dt)  # closest future hit
+        print(f"Future hit: {t_hit_ms + timestamp}, fut_dt: {fut_dt}")
         # elif real_dt.size > 0:
         #     t_hit_s = self.traj.t0 + np.max(real_dt)  # most recent past hit
         # else:
         #     t_hit_s = timestamp  # no roots -> just use "now"
-
-        else:
-            # t_hit_s = timestamp  # no future roots -> just use "now"
-            case = 3
-            return self.prev_phi_cmd
 
         ik_xyz = self.traj.predict_pos(t_hit_ms)[:, 0]  # predicted XYZ at the selected time
         self.interception_point_ROBOT = ik_xyz
@@ -183,7 +187,7 @@ class Arm:
 
         # If the current command is the same as the previous command, do nothing
         if np.equal(self.phi_cmd, phi_cmd).all():
-            print("phi_cmd is the same as the previous command, do nothing")
+            # print("phi_cmd is the same as the previous command, do nothing")
             return  # no movement needed
         else:
             self.phi_cmd = phi_cmd
@@ -206,8 +210,13 @@ class Arm:
         # endregion
 
         # Check limits and workspace before sending command to arm will raise ValueError if checks fail
-        self.limit_check(self.phi_cmd)
-        self.workspace_check(self.phi_cmd)
+        try:
+            self.limit_check(self.phi_cmd)
+            self.workspace_check(self.phi_cmd)
+        except ValueError as e:
+            print(f"Error occurred: {e}")
+            # self.home()
+            return
 
         # Commands arm to move to desired phi_cmd with gripper and LED states.
         # Currently uses initial internal values for gripper and LED if not specified as an input.
@@ -224,20 +233,20 @@ class Arm:
         #       Wrist:        ± 160 deg
 
         if phi_cmd[0] < -np.radians(170) or phi_cmd[0] > np.radians(170):
-            raise ValueError("Base Phi limit reached. Arm moved to home position.")
+            raise ValueError("Base Phi limit reached.")
         elif phi_cmd[1] < -np.radians(85) or phi_cmd[1] > np.radians(85):
-            raise ValueError("Shoulder Phi limit reached. Arm moved to home position.")
+            raise ValueError("Shoulder Phi limit reached.")
         elif phi_cmd[2] < -np.radians(95) or phi_cmd[2] > np.radians(75):
-            raise ValueError("Elbow Phi limit reached. Arm moved to home position.")
+            raise ValueError("Elbow Phi limit reached.")
         elif phi_cmd[3] < -np.radians(160) or phi_cmd[3] > np.radians(160):
-            raise ValueError("Wrist Phi limit reached. Arm moved to home position.")
+            raise ValueError("Wrist Phi limit reached.")
 
     # Checks if the arm will run into the table
     def workspace_check(self, phi_cmd) -> None:
         self.pos_cmd, _ = self.qarm_forward_kinematics(phi_cmd)  # updates self.T04 based on phi_cmd
         # Check z position of end-effector to make sure it won't run into the table.
         if self.pos_cmd[2] < 0.1:  # keeps z position from being within 0.1 meters of the table
-            raise ValueError("End-effector z position limit reached. Arm moved to home position.")
+            raise ValueError("End-effector z position limit reached.")
 
     def home(self) -> None:
         self.phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64)

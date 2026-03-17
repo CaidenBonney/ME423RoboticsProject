@@ -181,6 +181,18 @@ def draw_arm_overlay(
             2,
             cv2.LINE_AA,
         )
+    
+    if snap is not None and snap.timestamp is not None:
+        cv2.putText(
+            out,
+            f"timestamp: {snap.timestamp}",
+            (10, 120),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
 
     if arm_state is not None and arm_state.future_robot_points is not None:
         for xyz in np.asarray(arm_state.future_robot_points):
@@ -468,10 +480,10 @@ def main() -> None:
 
             if snap is not None:
 
-                camera_view = draw_camera_overlay(snap.frame, snap)
+                # camera_view = draw_camera_overlay(snap.frame, snap)
                 arm_view = draw_arm_overlay(snap.frame, cam, snap, arm_state)
 
-                cv2.imshow("camera_pov", camera_view)
+                # cv2.imshow("camera_pov", camera_view)
                 cv2.imshow("arm_pov", arm_view)
 
             key = cv2.waitKey(1)
