@@ -27,12 +27,12 @@ class Trajectory:
         # print("self.px: ", self.px)
         # print("self.py: ", self.py)
         # print("self.pz: ", self.pz)
-        # x = np.polyval(self.px, t_shift)
-        # y = np.polyval(self.py, t_shift)
-        # z = np.polyval(self.pz, t_shift)
-        x = self.pos[-1,0]
-        y = self.pos[-1,1]
-        z = self.pos[-1,2]
+        x = np.polyval(self.px, t_shift)
+        y = np.polyval(self.py, t_shift)
+        z = np.polyval(self.pz, t_shift)
+        # x = self.pos[-1,0]
+        # y = self.pos[-1,1]
+        # z = self.pos[-1,2]
         return np.vstack([x, y, z])
 
     def predict_vel(self, tt: float | np.ndarray) -> np.ndarray:
@@ -82,13 +82,39 @@ class Trajectory:
 
         if self.t.size >= 3:
             if self.points_since_update >= 0:
-                # self.pz = np.polyfit(t_shift, self.pos[:, 2],
-                self.pz = sp.curve_fit(lambda t, a, b, c: a * t**2 + b * t + c, t_shift, self.pos[:, 2])[
-                    0
-                ]  # , bounds=([0, -np.inf, -np.inf], [-np.inf, np.inf, np.inf]))[0]
+                # # self.pz = np.polyfit(t_shift, self.pos[:, 2],
+                # self.pz = sp.curve_fit(lambda t, a, b, c: a * t**2 + b * t + c, t_shift, self.pos[:, 2])[
+                #     0
+                # ]  # , bounds=([0, -np.inf, -np.inf], [-np.inf, np.inf, np.inf]))[0]
+                # self.points_since_update = 0
+                # print("z fit coeffs: ", self.pz)
+                
+                new_pz = self._fit_concave_down_quadratic(t_shift, self.pos[:, 2])
+                if new_pz is not None:
+                    self.pz = new_pz
+                
                 self.points_since_update = 0
-                print("z fit coeffs: ", self.pz)
+                print("z fit coeffs:", self.pz)
+
+
             else:
                 self.points_since_update += 1
         elif self.t.size >= 1:
             self.pz = np.array([0.0, 0.0, self.pos[0, 2]])
+
+    @staticmethod
+    def _fit_concave_down_quadratic(t_shift: np.ndarray, z: np.ndarray) -> np.ndarray:
+        """
+        Fast least-squares fit of z = a t^2 + b t + c with constraint a <= 0.
+        Exact solution without iterative optimization:
+            - use quadratic fit if unconstrained a <= 0
+            - otherwise best constrained fit is the boundary case a = 0 (a line)
+        Returns [a, b, c].
+        """
+        # Unconstrained quadratic least squares
+        X2 = np.column_stack((t_shift * t_shift, t_shift, np.ones_like(t_shift)))
+        q, _, _, _ = np.linalg.lstsq(X2, z, rcond=None)
+        a, b, c = q
+
+        if a <= 0.0:
+            return q
