@@ -254,7 +254,24 @@ def camera_worker(
     ready: threading.Event,
 ) -> None:
     ready.set()
-    # return  # Uncomment for manual control of arm
+
+    # # Uncomment entire block for manual control of arm
+    # # region: Manual Control of Arm
+    # while not stop_event.is_set():
+    #     try:
+    #         ballXYZ, ball_found, timestamp = [0.75, 0, 0.3], True, time.time()
+    #         ballXYZ_queue.put_latest(
+    #             (
+    #                 np.asarray(ballXYZ, dtype=np.float64).reshape(3),
+    #                 bool(ball_found),
+    #                 float(timestamp),
+    #             )
+    #         )
+    #     except Exception as e:
+    #         print(f"camera_worker error: {e}")
+    #         time.sleep(0.01)
+    # return
+    # # endregion
 
     while not stop_event.is_set():
         try:
@@ -388,9 +405,9 @@ def manual_control_arm_worker(
     moved = False
     start = arm.elapsed_time()
     try:
+        phi_cmd = np.array([0.2, 0, 0, 0], dtype=np.float64)
         while not stop_event.is_set() and arm.myArm.status:
             try:
-                phi_cmd = np.array([0.2, 0, 0, 0], dtype=np.float64)
                 if not moved:
                     inp = input("test input: ")
                     if inp == "home":
@@ -423,7 +440,7 @@ def manual_control_arm_worker(
                     moved = True
 
             except ValueError as e:
-                # print(f"Command error: {e}, phi_cmd: {phi_cmd}")
+                print(f"Command error: {e}, phi_cmd: {phi_cmd}")
                 arm.home()
             except EOFError:
                 break

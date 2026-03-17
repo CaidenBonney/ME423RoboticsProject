@@ -185,9 +185,14 @@ class Arm:
         if phi_cmd.shape != (4,):
             raise ValueError("phi_Cmd must be an iterable of 4 joint angles [rad].")
 
+        r = 0.05
+
         # If the current command is the same as the previous command, do nothing
         if np.equal(self.phi_cmd, phi_cmd).all():
             # print("phi_cmd is the same as the previous command, do nothing")
+            return  # no movement needed
+        elif np.linalg.norm(phi_cmd - self.phi_cmd) <= r:
+            print(f"phi_cmd is within {r} of the previous command, do nothing")
             return  # no movement needed
         else:
             self.phi_cmd = phi_cmd
