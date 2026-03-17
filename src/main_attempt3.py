@@ -400,18 +400,30 @@ def manual_control_arm_worker(
     ready: threading.Event,
 ) -> None:
     arm = Arm()
+    # arm.print_measurement_check("after init at home")
     ready.set()
 
     moved = False
     start = arm.elapsed_time()
+    test_pose_1 = np.array([0.2, 0.0, 0.0, 0.0], dtype=np.float64)
+    test_pose_2 = np.array([0.35, -0.2, 0.15, 0.0], dtype=np.float64)
     try:
-        phi_cmd = np.array([0.2, 0, 0, 0], dtype=np.float64)
+        phi_cmd = test_pose_1.copy()
         while not stop_event.is_set() and arm.myArm.status:
             try:
                 if not moved:
                     inp = input("test input: ")
                     if inp == "home":
                         arm.home()
+                        time.sleep(1.5)
+                        arm.print_measurement_check("after moving home")
+                        continue
+                    elif inp == "test1":
+                        phi_cmd = test_pose_1.copy()
+                    elif inp == "test2":
+                        phi_cmd = test_pose_2.copy()
+                    elif inp == "check":
+                        arm.print_measurement_check("manual measurement check")
                         continue
                     elif len(inp.split(",")) == 4:
                         inp_ls = inp.split(",")
@@ -436,7 +448,8 @@ def manual_control_arm_worker(
 
                     print(f"moving arm with command: {phi_cmd}")
                     arm.move(phi_Cmd=phi_cmd)
-                    # print(f"arm.move duration: {duration3:.4f} seconds")
+                    time.sleep(1.5)
+                    arm.print_measurement_check(f"after moving to {phi_cmd}")
                     moved = True
 
             except ValueError as e:

@@ -52,11 +52,35 @@ class Arm:
 
         # Determine offset of initial position to home position for measuring joint angles
         self.home()
-        self._phi_offset = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64)  # [rad] joint angles for 4 joints in order: base, shoulder, elbow, wrist  # fmt: skip
-        print(self._phi_offset)
+
+        # region: Wait for arm to settle at home using measured joint velocity
+        vel_tol = 0.02
+        settle_timeout_s = 5.0
+        settle_start = time.time()
+        while time.time() - settle_start < settle_timeout_s:
+            self.myArm.read_std()
+            joint_speed = np.asarray(self.myArm.measJointSpeed[0:4], dtype=np.float64)
+            if np.linalg.norm(joint_speed) <= vel_tol:
+                break
+            time.sleep(0.05)
+        # endregion
+
+        self._phi_offset = np.array(self.myArm.measJointPosition[0:4], dtype=np.float64, copy=True)  # [rad] joint angles for 4 joints in order: base, shoulder, elbow, wrist  # fmt: skip
 
     def elapsed_time(self) -> float:
         return time.time() - self.startTime
+
+    def print_measurement_check(self, label: str = "measurement check") -> None:
+        """Prints raw and offset-corrected joint measurements for quick verification."""
+        self.myArm.read_std()
+        raw_phi = np.asarray(self.myArm.measJointPosition[0:4], dtype=np.float64)
+        joint_speed = np.asarray(self.myArm.measJointSpeed[0:4], dtype=np.float64)
+        rel_phi = raw_phi - self._phi_offset
+        print(label)
+        print("raw measured phi:", raw_phi)
+        print("stored home offset:", self._phi_offset)
+        print("home-relative phi:", rel_phi)
+        print("measured joint speed:", joint_speed)
 
     def ballXYZ_to_phi_cmd(self, XYZ: np.ndarray, ball_found: bool, timestamp: float) -> Optional[np.ndarray]:
         """Converts a detected ball position to joint angles for interception.
@@ -181,21 +205,21 @@ class Arm:
 
         """
         # region: Process Inputs:
-        phi_cmd = np.asarray(phi_Cmd, dtype=np.float64)
-        if phi_cmd.shape != (4,):
+        input_phi_cmd = np.asarray(phi_Cmd, dtype=np.float64)
+        if input_phi_cmd.shape != (4,):
             raise ValueError("phi_Cmd must be an iterable of 4 joint angles [rad].")
 
         r = 0.05
 
         # If the current command is the same as the previous command, do nothing
-        if np.equal(self.phi_cmd, phi_cmd).all():
-            # print("phi_cmd is the same as the previous command, do nothing")
+        if np.equal(self.phi_cmd, input_phi_cmd).all():
+            print("phi_cmd is the same as the previous command, do nothing")
             return  # no movement needed
-        elif np.linalg.norm(phi_cmd - self.phi_cmd) <= r:
+        elif np.linalg.norm(input_phi_cmd - self.phi_cmd) <= r:
             print(f"phi_cmd is within {r} of the previous command, do nothing")
             return  # no movement needed
         else:
-            self.phi_cmd = phi_cmd
+            self.phi_cmd = input_phi_cmd
 
         # Optional gripper command
         if gripper_Cmd is not None:
