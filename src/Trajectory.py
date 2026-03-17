@@ -29,12 +29,12 @@ class Trajectory:
         # print("self.px: ", self.px)
         # print("self.py: ", self.py)
         # print("self.pz: ", self.pz)
-        x = np.polyval(self.px, t_shift)
-        y = np.polyval(self.py, t_shift)
-        z = np.polyval(self.pz, t_shift)
-        # x = self.pos[-1,0]
-        # y = self.pos[-1,1]
-        # z = self.pos[-1,2]
+        # x = np.polyval(self.px, t_shift)
+        # y = np.polyval(self.py, t_shift)
+        # z = np.polyval(self.pz, t_shift)
+        x = self.pos[-1,0]
+        y = self.pos[-1,1]
+        z = self.pos[-1,2]
         return np.vstack([x, y, z])
 
     def predict_vel(self, tt: float | np.ndarray) -> np.ndarray:

@@ -143,6 +143,7 @@ class Arm:
             self.interception_point_ROBOT = None
             self.interception_time = None
             return self.prev_phi_cmd
+        
         t_hit_ms = self.traj.t0[0] + np.min(fut_dt)  # closest future hit
         print(f"Future hit: {t_hit_ms + timestamp}, fut_dt: {fut_dt}")
         # elif real_dt.size > 0:
@@ -158,6 +159,129 @@ class Arm:
 
         # Final frame for IK input is the predicted XYZ.
         ik_pos_cmd = ik_xyz
+        # print(ik_pos_cmd)
+
+        # Compute IK: all candidate solutions + a fallback solution.
+        ik_all_solns, ik_soln = self.qarm_inverse_kinematics(ik_pos_cmd, 0, self.phi)
+
+        phi_seed = np.asarray(self.phi, dtype=np.float64)  # current joint angles
+        all_solns = np.asarray(ik_all_solns, dtype=np.float64)
+        chosen_phi = None
+
+        # Prefer a valid solution that is closest to the current joint configuration
+        # (avoids elbow-up/down "flips" when multiple IK solutions exist).
+        if all_solns.ndim == 2 and all_solns.shape[0] == 4:
+            valid_cols = np.all(np.isfinite(all_solns), axis=0)
+            # If any valid solutions exist, choose the one closest to current joint angles.
+            if np.any(valid_cols):
+                valid_solns = all_solns[:, valid_cols].T
+                idx = np.argmin(np.linalg.norm(valid_solns - phi_seed, axis=1))
+                chosen_phi = valid_solns[idx]
+
+        # Fallback: use the solver-provided single solution if the multi-solution path failed.
+        if chosen_phi is None:
+            fallback_phi = np.asarray(ik_soln, dtype=np.float64).reshape(-1)
+            if fallback_phi.shape == (4,) and np.all(np.isfinite(fallback_phi)):
+                chosen_phi = fallback_phi
+
+        # If no finite 4-joint solution exists, the target is unreachable (or frames are wrong).
+        if chosen_phi is None:
+            raise ValueError("IK failed: target appears unreachable.")
+        else:
+            print("commanded phi: ", chosen_phi, timestamp)
+
+        phi_cmd = np.asarray(chosen_phi, dtype=np.float64)
+        self.prev_phi_cmd = phi_cmd
+        return phi_cmd
+    
+    def ballXYZ_to_phi_cmd_no_traj(self, XYZ: np.ndarray, ball_found: bool, timestamp: float) -> Optional[np.ndarray]:
+        """Converts a detected ball position to joint angles for interception.
+        Houses a Trajectory object to buffer the ball position over time to enable polynomial fitting and prediction.
+        Utilizes reverse kinematics to convert the predicted interception point to joint angles.
+
+        Args:
+            XYZ: Detected ball position in 3D space w.r.t QArm base (meters).
+            ball_found: Boolean indicating if the ball was detected in the current frame.
+            timestamp: Time of the current frame (milliseconds).
+
+        Returns:
+            phi_cmd: Joint angles [rad] for interception, or previous command if ball is lost.
+        """
+
+        xyz_meas = np.asarray(XYZ, dtype=np.float64).reshape(3)
+        if not np.all(np.isfinite(xyz_meas)):
+            raise ValueError("XYZ command contains NaN/Inf values.")
+
+        self.interception_point_ROBOT = xyz_meas
+        self.interception_time = timestamp
+
+        ik_pos_cmd = xyz_meas
+        # print(ik_pos_cmd)
+
+        # Compute IK: all candidate solutions + a fallback solution.
+        ik_all_solns, ik_soln = self.qarm_inverse_kinematics(ik_pos_cmd, 0, self.phi)
+
+        phi_seed = np.asarray(self.phi, dtype=np.float64)  # current joint angles
+        all_solns = np.asarray(ik_all_solns, dtype=np.float64)
+        chosen_phi = None
+
+        # Prefer a valid solution that is closest to the current joint configuration
+        # (avoids elbow-up/down "flips" when multiple IK solutions exist).
+        if all_solns.ndim == 2 and all_solns.shape[0] == 4:
+            valid_cols = np.all(np.isfinite(all_solns), axis=0)
+            # If any valid solutions exist, choose the one closest to current joint angles.
+            if np.any(valid_cols):
+                valid_solns = all_solns[:, valid_cols].T
+                idx = np.argmin(np.linalg.norm(valid_solns - phi_seed, axis=1))
+                chosen_phi = valid_solns[idx]
+
+        # Fallback: use the solver-provided single solution if the multi-solution path failed.
+        if chosen_phi is None:
+            fallback_phi = np.asarray(ik_soln, dtype=np.float64).reshape(-1)
+            if fallback_phi.shape == (4,) and np.all(np.isfinite(fallback_phi)):
+                chosen_phi = fallback_phi
+
+        # If no finite 4-joint solution exists, the target is unreachable (or frames are wrong).
+        if chosen_phi is None:
+            raise ValueError("IK failed: target appears unreachable.")
+        else:
+            print("commanded phi: ", chosen_phi, timestamp)
+
+        phi_cmd = np.asarray(chosen_phi, dtype=np.float64)
+        self.prev_phi_cmd = phi_cmd
+        return phi_cmd
+    
+    def ballXYZ_to_phi_cmd_no_traj_fixed_xz (self, XYZ: np.ndarray, ball_found: bool, timestamp: float, fixed_x: float, fixed_z: float) -> Optional[np.ndarray]:
+        """Converts a detected ball position to joint angles for interception.
+        Houses a Trajectory object to buffer the ball position over time to enable polynomial fitting and prediction.
+        Utilizes reverse kinematics to convert the predicted interception point to joint angles.
+
+        Args:
+            XYZ: Detected ball position in 3D space w.r.t QArm base (meters).
+            ball_found: Boolean indicating if the ball was detected in the current frame.
+            timestamp: Time of the current frame (milliseconds).
+            fixed_x: The fixed x-coordinate for the interception point.
+            fixed_z: The fixed z-coordinate for the interception point.
+
+        Returns:
+            phi_cmd: Joint angles [rad] for interception, or previous command if ball is lost.
+        """
+
+        xyz_meas = np.asarray(XYZ, dtype=np.float64).reshape(3)
+        if not np.all(np.isfinite(xyz_meas)):
+            raise ValueError("XYZ command contains NaN/Inf values.")
+        
+        
+        xyz_meas[0] = fixed_x  # override measured x with fixed x value for interception point
+        xyz_meas[2] = fixed_z  # override measured z with fixed z value for interception point
+
+        if not ball_found or ball_found is None:
+            return self.prev_phi_cmd
+
+        self.interception_point_ROBOT = xyz_meas
+        self.interception_time = timestamp
+
+        ik_pos_cmd = xyz_meas
         # print(ik_pos_cmd)
 
         # Compute IK: all candidate solutions + a fallback solution.
@@ -213,11 +337,12 @@ class Arm:
 
         # If the current command is the same as the previous command, do nothing
         if np.equal(self.phi_cmd, input_phi_cmd).all():
-            print("phi_cmd is the same as the previous command, do nothing")
+            # print("phi_cmd is the same as the previous command, do nothing")
+            print(".", end="")
             return  # no movement needed
-        elif np.linalg.norm(input_phi_cmd - self.phi_cmd) <= r:
-            print(f"phi_cmd is within {r} of the previous command, do nothing")
-            return  # no movement needed
+        # elif np.linalg.norm(input_phi_cmd - self.phi_cmd) <= r:
+        #     print(f"phi_cmd is within {r} of the previous command, do nothing")
+        #     return  # no movement needed
         else:
             self.phi_cmd = input_phi_cmd
 
@@ -244,6 +369,7 @@ class Arm:
             self.workspace_check(self.phi_cmd)
         except ValueError as e:
             print(f"Error occurred: {e}")
+            print("Invalid phi_cmd: ", self.phi_cmd)
             # self.home()
             return
 

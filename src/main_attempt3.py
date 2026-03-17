@@ -336,7 +336,7 @@ def arm_worker(
                 continue
 
             try:
-                phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found, timestamp)
+                phi_cmd = arm.ballXYZ_to_phi_cmd_no_traj_fixed_xz(ballXYZ, ball_found, timestamp, fixed_x=0.6, fixed_z=0.25)
                 interception_point_ROBOT = arm.interception_point_ROBOT
                 interception_time = arm.interception_time
                 future_pts = []
@@ -373,7 +373,6 @@ def arm_worker(
 
             except ValueError as e:
                 print(f"Command error: {e}")
-                arm.home()
             except EOFError:
                 break
             except Exception as e:
