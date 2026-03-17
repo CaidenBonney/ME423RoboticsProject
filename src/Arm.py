@@ -122,12 +122,14 @@ class Arm:
         return chosen_phi
 
     def _apply_phi_cmd(self, phi_cmd: np.ndarray, intercept: np.ndarray) -> np.ndarray:
-        """Store, move, and return a resolved phi command."""
+        """Store state and return a resolved phi command.
+        Does NOT call move() — the arm_worker loop in main is responsible for
+        that, exactly as it was before these methods existed.
+        """
         phi_cmd = np.asarray(phi_cmd, dtype=np.float64)
         self.phi_cmd = phi_cmd.copy()
         self.pos_cmd = intercept.copy()
         self.prev_phi_cmd = phi_cmd.copy()
-        self.move(phi_Cmd=phi_cmd)
         return phi_cmd
 
     # ── original methods (unchanged) ──────────────────────────────────────
