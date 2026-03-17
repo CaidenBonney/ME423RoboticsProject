@@ -336,9 +336,6 @@ def arm_worker(
                 continue
 
             try:
-                phi_cmd = arm.ballXYZ_to_phi_cmd_no_traj_fixed_xz(ballXYZ, ball_found, timestamp, fixed_x=0.6, fixed_z=0.25)
-                interception_point_ROBOT = arm.interception_point_ROBOT
-                interception_time = arm.interception_time
                 future_pts = []
                 past_pts = []
                 if arm.traj.t.size > 0:
@@ -347,7 +344,15 @@ def arm_worker(
                         t_future = arm.traj.t[-1] + i * timestep
                         pred = np.asarray(arm.traj.predict_pos(t_future), dtype=np.float64).reshape(3)
                         future_pts.append(pred)
+                        past_pts = np.asarray(arm.traj.pos[-past_points_drawn:, :], dtype=np.float64)
                 future_pts_arr = np.asarray(future_pts, dtype=np.float64)
+                scaled_vel = past_pts[-1, :3] - past_pts[0, :3] if len(past_pts) >= 2 else np.zeros(3)
+                y_sign = np.sign(scaled_vel[1]) if scaled_vel[1] != 0 else 0
+                ballXYZ_with_offset = np.asarray(ballXYZ, dtype=np.float64).reshape(3) + np.array([0.0, y_sign * 0.1, 0.0])
+                phi_cmd = arm.ballXYZ_to_phi_cmd_no_traj_fixed_x(ballXYZ_with_offset, ball_found, timestamp, fixed_x=0.6)
+                interception_point_ROBOT = arm.interception_point_ROBOT
+                interception_time = arm.interception_time
+                
                 # for i in range(past_points_drawn):
                 past_pts = np.asarray(arm.traj.pos[-past_points_drawn:, :], dtype=np.float64)
                 latest_arm_state.set(
