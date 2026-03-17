@@ -1,130 +1,170 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 import numpy as np
-import scipy.optimize as sp
+
+from intercept_utils import G, weighted_polyfit
 
 
 @dataclass
 class Trajectory:
-    """Holds polynomial coefficients and callable position/velocity functions."""
+    """
+    Holds polynomial coefficients and callable position/velocity functions.
+
+    Time units in this class are milliseconds, because that is what your
+    camera/arm pipeline currently uses.
+    """
 
     def __init__(self) -> None:
-        self.px = np.array([0, 0])  # degree 1 polynomial coeffs for x(t_shift)
-        self.py = np.array([0, 0])  # degree 1 polynomial coeffs for y(t_shift)
-        self.pz = np.array([0, 0, 0])  # degree 2 polynomial coeffs for z(t_shift)
-        self.t0 = 0  # time origin for numerical stability (milliseconds). Gets set to first point timestamp
-        self.t = np.array([])  # timestamps of observed points (milliseconds)
-        self.pos = np.array([0, 0, 0]).reshape(3, 1)
-        self.points_since_update = 5  # count how many points have been added since the last trajectory update, used to determine when to update the trajectory fit
-        self.pz_buffer = []
-        self.pz_buffer_size = 3
+        # x(t_shift_ms) = px[0] * t + px[1]
+        # y(t_shift_ms) = py[0] * t + py[1]
+        # z(t_shift_ms) = pz[0] * t^2 + pz[1] * t + pz[2]
+        self.px = np.array([0.0, 0.0], dtype=np.float64)
+        self.py = np.array([0.0, 0.0], dtype=np.float64)
+        self.pz = np.array([0.0, 0.0, 0.0], dtype=np.float64)
+
+        self.t0 = 0.0  # scalar milliseconds
+        self.t = np.array([], dtype=np.float64)  # timestamps in milliseconds
+        self.pos = np.empty((0, 3), dtype=np.float64)
+
+        self.points_since_update = 0
+        self.pz_buffer: list[np.ndarray] = []
+        self.pz_buffer_size = 1  # keep immediate updates for responsive interception
+
+    def reset(self) -> None:
+        self.__init__()
 
     def predict_pos(self, tt: float | np.ndarray) -> np.ndarray:
-        """Position at time tt (milliseconds). Returns (3,) for scalar tt or (3,N) for array."""
-        # print("")
-        if np.size(self.t) == 0:
-            return np.zeros((3,)) if np.size(tt) > 1 else np.zeros((3, 1))
-        tt = np.asarray(tt)
-        t_shift = tt - self.t0  # [milliseconds] shift by t0 for numerical stability
-        # print("t_shift: ", t_shift)
-        # print("self.px: ", self.px)
-        # print("self.py: ", self.py)
-        # print("self.pz: ", self.pz)
-        # x = np.polyval(self.px, t_shift)
-        # y = np.polyval(self.py, t_shift)
-        # z = np.polyval(self.pz, t_shift)
-        x = self.pos[-1,0]
-        y = self.pos[-1,1]
-        z = self.pos[-1,2]
-        return np.vstack([x, y, z])
+        """
+        Position at time tt (milliseconds).
+        Returns shape (3,1) for scalar input and (3,N) for array input.
+        """
+        tt_arr = np.asarray(tt, dtype=np.float64)
+        if self.t.size == 0:
+            if tt_arr.ndim == 0:
+                return np.zeros((3, 1), dtype=np.float64)
+            return np.zeros((3, tt_arr.size), dtype=np.float64)
+
+        t_shift = tt_arr - self.t0
+        x = np.polyval(self.px, t_shift)
+        y = np.polyval(self.py, t_shift)
+        z = np.polyval(self.pz, t_shift)
+
+        out = np.vstack([x, y, z]).astype(np.float64)
+        if tt_arr.ndim == 0:
+            return out.reshape(3, 1)
+        return out
 
     def predict_vel(self, tt: float | np.ndarray) -> np.ndarray:
-        """Velocity at time tt (milliseconds). Returns (3,) for scalar tt or (3,N) for array."""
-        tt = np.asarray(tt)
-        t_shift = tt - self.t0  # [milliseconds] shift by t0 for numerical stability
+        """
+        Velocity at time tt (milliseconds).
+        Returns shape (3,1) for scalar input and (3,N) for array input.
+        Velocity units are meters per millisecond.
+        """
+        tt_arr = np.asarray(tt, dtype=np.float64)
+        if self.t.size == 0:
+            if tt_arr.ndim == 0:
+                return np.zeros((3, 1), dtype=np.float64)
+            return np.zeros((3, tt_arr.size), dtype=np.float64)
+
+        t_shift = tt_arr - self.t0
         vx = np.polyval(np.polyder(self.px), t_shift)
         vy = np.polyval(np.polyder(self.py), t_shift)
         vz = np.polyval(np.polyder(self.pz), t_shift)
-        return np.vstack([vx, vy, vz])
+
+        out = np.vstack([vx, vy, vz]).astype(np.float64)
+        if tt_arr.ndim == 0:
+            return out.reshape(3, 1)
+        return out
 
     def update_trajectory(self, t: np.ndarray, pos: np.ndarray, window_size: int, update_freq: int = 0) -> None:
-        # t is the timestamp of the frame in which the point was detected in global time (milliseconds)
-        t = np.asarray(t).reshape(-1)
-        pos = np.asarray(pos).reshape(-1, 3)
+        """
+        Add one or more samples and refit.
+        Inputs:
+            t   : timestamp(s) in milliseconds
+            pos : xyz sample(s) in meters, shape (3,) or (N,3)
+        """
+        t = np.asarray(t, dtype=np.float64).reshape(-1)
+        pos = np.asarray(pos, dtype=np.float64).reshape(-1, 3)
 
-        # Append new samples
+        # Filter bad rows early
+        good = np.all(np.isfinite(pos), axis=1) & np.isfinite(t)
+        t = t[good]
+        pos = pos[good]
+
+        if t.size == 0:
+            return
+
+        # Append
         if self.t.size == 0:
-            self.t = np.append(self.t, t)
+            self.t = t.copy()
             self.pos = pos.copy()
-            self.t0 = t
         else:
             self.t = np.concatenate([self.t, t], axis=0)
             self.pos = np.concatenate([self.pos, pos], axis=0)
 
-        # Keep only the most recent window
+        # Keep only recent window
         if self.t.size > window_size:
             self.t = self.t[-window_size:]
-            self.t0 = self.t[0]  # update t0 to the new oldest timestamp for numerical stability
             self.pos = self.pos[-window_size:, :]
 
-        # print("t0: ", self.t0)
-        t_shift = self.t - self.t0  # [milliseconds] shift by t0 for numerical stability
-        # print ("t0: ", self.t0,"t_shift: ", t_shift)
+        self.t0 = float(self.t[0])
+        t_shift = self.t - self.t0  # milliseconds
 
-        # Fit only when enough points exist
-        if self.t.size >= 2:
-            if self.points_since_update >= update_freq:
-                self.px = np.polyfit(t_shift, self.pos[:, 0], 1)
-                self.py = np.polyfit(t_shift, self.pos[:, 1], 1)
-                self.points_since_update = 0
-            else:
-                self.points_since_update += 1
+        self._fit_polynomials(t_shift)
+
+    def _fit_polynomials(self, t_shift_ms: np.ndarray) -> None:
+        """
+        Robust-ish weighted fit:
+        - x/y: linear
+        - z: quadratic with concave-down / gravity-consistent curvature
+        """
+        n = t_shift_ms.size
+        if n == 0:
+            return
+
+        # Weight recent samples more heavily
+        age = t_shift_ms[-1] - t_shift_ms
+        tau = max(float(t_shift_ms[-1]), 1.0)
+        w = np.exp(-2.0 * age / tau)
+
+        # x/y fits
+        if n >= 2:
+            self.px = weighted_polyfit(t_shift_ms, self.pos[:, 0], deg=1, w=w)
+            self.py = weighted_polyfit(t_shift_ms, self.pos[:, 1], deg=1, w=w)
         else:
-            self.px = np.array([0.0, self.pos[0, 0]])
-            self.py = np.array([0.0, self.pos[0, 1]])
+            self.px = np.array([0.0, self.pos[0, 0]], dtype=np.float64)
+            self.py = np.array([0.0, self.pos[0, 1]], dtype=np.float64)
 
-        if self.t.size >= 3:
-            # if self.points_since_update >= 3:
-                # # self.pz = np.polyfit(t_shift, self.pos[:, 2],
-                # self.pz = sp.curve_fit(lambda t, a, b, c: a * t**2 + b * t + c, t_shift, self.pos[:, 2])[
-                #     0
-                # ]  # , bounds=([0, -np.inf, -np.inf], [-np.inf, np.inf, np.inf]))[0]
-                # self.points_since_update = 0
-                # print("z fit coeffs: ", self.pz)
-                
-            if self.points_since_update >= 0:
-                new_pz = self._fit_concave_down_quadratic(t_shift, self.pos[:, 2])
-                self._update_pz_batch(new_pz)
-                self.points_since_update = 0
-            else:
-                self.points_since_update += 1
-        elif self.t.size >= 1:
-            self.pz = np.array([0.0, 0.0, self.pos[0, 2]])
+        # z fit
+        if n >= 3:
+            new_pz = self._fit_concave_down_quadratic_ms(t_shift_ms, self.pos[:, 2], w=w)
+            self._update_pz_batch(new_pz)
+        elif n >= 2:
+            # fall back to linear z packed as quadratic
+            pz_lin = weighted_polyfit(t_shift_ms, self.pos[:, 2], deg=1, w=w)
+            self.pz = np.array([0.0, pz_lin[0], pz_lin[1]], dtype=np.float64)
+        else:
+            self.pz = np.array([0.0, 0.0, self.pos[0, 2]], dtype=np.float64)
 
     @staticmethod
-    def _fit_concave_down_quadratic(t_shift: np.ndarray, z: np.ndarray) -> np.ndarray:
+    def _fit_concave_down_quadratic_ms(t_shift_ms: np.ndarray, z: np.ndarray, w: np.ndarray | None = None) -> np.ndarray:
         """
-        Fast least-squares fit of z = a t^2 + b t + c with constraint a <= 0.
-        Exact solution without iterative optimization:
-            - use quadratic fit if unconstrained a <= 0
-            - otherwise best constrained fit is the boundary case a = 0 (a line)
-        Returns [a, b, c].
-        """
-        # Unconstrained quadratic least squares
-        X2 = np.column_stack((t_shift * t_shift, t_shift, np.ones_like(t_shift)))
-        q, _, _, _ = np.linalg.lstsq(X2, z, rcond=None)
-        a, b, c = q
+        Fit z(t_ms) = a t_ms^2 + b t_ms + c.
+        Enforce concave-down with at least ballistic gravity curvature in ms-units.
 
-        q[0] = min(q[0], -0.5*9.81/1_000_000)  # enforce a <= 0 constraint
-        print(f"Fitted quadratic coeffs: a={a:.4f}, b={b:.4f}, c={c:.4f}")
+        In seconds, ideal ballistic curvature is -g/2.
+        In milliseconds, that becomes:
+            a = -(g/2) / (1000^2)
+        """
+        q = weighted_polyfit(t_shift_ms, z, deg=2, w=w)
+        ballistic_a_ms = -0.5 * G / 1_000_000.0  # meters / ms^2
+        q = np.asarray(q, dtype=np.float64)
+        q[0] = min(q[0], ballistic_a_ms)
         return q
 
     def _update_pz_batch(self, new_pz: np.ndarray) -> None:
-        """
-        Collect raw fits, then update self.pz to their average and flush buffer at specified size.
-        """
-        self.pz_buffer.append(new_pz.copy())
-
-        if len(self.pz_buffer) == self.pz_buffer_size:
+        self.pz_buffer.append(np.asarray(new_pz, dtype=np.float64).copy())
+        if len(self.pz_buffer) >= self.pz_buffer_size:
             self.pz = np.mean(np.stack(self.pz_buffer, axis=0), axis=0)
             self.pz_buffer.clear()
-            print("batched z fit coeffs:", self.pz)
