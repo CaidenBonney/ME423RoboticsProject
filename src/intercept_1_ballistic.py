@@ -42,8 +42,8 @@ class BallisticInterceptor:
         timestamps – milliseconds
     """
     catch_z: float = 0.10          # [m] height of the catch plane above robot base
-    window_size: int = 30          # maximum number of observations to keep
-    min_points: int = 3            # minimum observations before prediction is valid
+    window_size: int = 70          # maximum number of observations to keep
+    min_points: int = 10            # minimum observations before prediction is valid
 
     # ── internal state ─────────────────────────────────────────────────────
     _t:   np.ndarray = field(default_factory=lambda: np.empty(0))

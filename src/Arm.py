@@ -358,7 +358,7 @@ class Arm:
             print("[ballistic] waiting for enough points or no future root")
             self.interception_point_ROBOT = None
             self.interception_time = None
-            return self.prev_phi_cmd
+            # return self.prev_phi_cmd
             intercept = np.array([self.fixedX, XYZ[1], self._catch_z], dtype=np.float64)
             # if self.ballistic_interceptor._vy != 0:
                 # intercept[1] += self.ballistic_interceptor._vy * self.veloOvershoot
