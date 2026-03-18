@@ -148,10 +148,13 @@ def robust_depth_at_pixel(depth_frame, u: int, v: int, radius: int) -> float:
     vals = []
     for dv in range(-radius, radius + 1):
         for du in range(-radius, radius + 1):
-            uu, vv = u + du, v + dv
-            z = float(depth_frame.get_distance(uu, vv))
-            if z > 0:
-                vals.append(z)
+            try:
+                uu, vv = u + du, v + dv
+                z = float(depth_frame.get_distance(uu, vv))
+                if z > 0:
+                    vals.append(z)
+            except Exception:
+                pass
     if not vals:
         return 0.0
     return float(np.median(vals))
