@@ -332,7 +332,7 @@ def arm_worker(
             try:
                 ballXYZ, ball_found, timestamp = ballXYZ_queue.get(timeout=0.02)
             except queue.Empty:
-                print("Ball XYZ queue is empty")
+                # print("Ball XYZ queue is empty")
                 continue
 
             try:
@@ -348,17 +348,18 @@ def arm_worker(
                 future_pts_arr = np.asarray(future_pts, dtype=np.float64)
                 scaled_vel = past_pts[-1, :3] - past_pts[0, :3] if len(past_pts) >= 2 else np.zeros(3)
                 y_sign = np.sign(scaled_vel[1]) if scaled_vel[1] != 0 else 0
-                ball_XYZ_with_offset = np.asarray(ballXYZ, dtype=np.float64).reshape(3) + np.array([0.0, scaled_vel[1]*0.8, 0.0])
+                ball_XYZ_with_offset = np.asarray(ballXYZ, dtype=np.float64).reshape(3) + np.array([0.0, scaled_vel[1]*.9, 0.0])
                 z_bounded = max(0.1, min(0.6, ball_XYZ_with_offset[2]))
                 ball_XYZ_with_offset[2] = z_bounded
                 y_bounded = max(-0.5, min(0.5, ball_XYZ_with_offset[1]))
                 ball_XYZ_with_offset[1] = y_bounded
-                print(f"Scaled velocity: {scaled_vel}, y_sign: {y_sign}, z_bounded: {z_bounded}")
+                # print(f"Scaled velocity: {scaled_vel}, y_sign: {y_sign}, z_bounded: {z_bounded}")
                 # ballXYZ_with_offset = np.asarray(ballXYZ, dtype=np.float64).reshape(3) + np.array([0.0, y_sign*1.1, 0.0])
                 phi_cmd = arm.ballXYZ_to_phi_cmd_no_traj_fixed_x(ball_XYZ_with_offset, ball_found, timestamp, fixed_x=0.6)
                 interception_point_ROBOT = arm.interception_point_ROBOT
                 interception_time = arm.interception_time
                 
+                print("BALL POSITION: ", ballXYZ, "PHI CMD: ", phi_cmd, "commanded position: ", arm.pos_cmd, "POSITION WITH OFFSET: ", ball_XYZ_with_offset)
                 # for i in range(past_points_drawn):
                 past_pts = np.asarray(arm.traj.pos[-past_points_drawn:, :], dtype=np.float64)
                 latest_arm_state.set(
