@@ -47,9 +47,9 @@ class QArm():
                                                               # position mode
                                                               # at the moment
         # self.profileVelocity = np.array([1.5708, 1.5708, 1.5708, 1.5708], dtype=np.float64)
-        self.profileVelocity = np.array([3, 3, 3, 3], dtype=np.float64)
+        self.profileVelocity = np.array([4, 3, 3, 3], dtype=np.float64)
         # self.profileAcceleration = np.array([1.0472, 1.0472, 1.0472, 1.0472], dtype=np.float64)
-        self.profileAcceleration = np.array([2, 2, 2, 2], dtype=np.float64)
+        self.profileAcceleration = np.array([3, 2, 2, 2], dtype=np.float64)
         self.card = HIL()
         if self.hardware:
             boardIdentifier = str(deviceId)

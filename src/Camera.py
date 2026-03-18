@@ -16,7 +16,7 @@ ARUCO_DICT = cv2.aruco.DICT_4X4_250
 W, H, FPS = 640, 480, 60
 
 NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
-BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
+BALL_DEPTH_RADIUS_PX = 4  # depth sampling neighborhood for ball center
 MIN_VALID_CORNERS = 3
 
 # Ball detector thresholds (tune if needed)
@@ -45,7 +45,11 @@ class Camera:
         self.sampleRate = FPS  # [Hz] how often to capture/process frames from the camera. Can be lower than the camera FPS to reduce noise and CPU load.
         self.sampleTime = 1 / self.sampleRate
         self.bs = None  # background susbtractor mpdel
-        self.intrinsics = None  # camera intrinsics
+
+        self.color_intrinsics = None
+        self.depth_intrinsics = None
+        self.aligned_depth_intrinsics = None
+
         self.T_cam2ArUco = None  # transformation from camera frame to robot frame
         self.T_cam2ArUco_inv = None  # inverse of T_cam2ArUco
         self.pipeline = None  # realsense pipeline
@@ -96,14 +100,18 @@ class Camera:
         # configure depth and color streamss
         self.pipeline = rs.pipeline()
         cfg = rs.config()
-        cfg.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, FPS)
-        cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, FPS)
+        cfg.enable_stream(rs.stream.depth, W, H, rs.format.z16, FPS)
+        cfg.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
         self.profile = self.pipeline.start(cfg)
+
         align_to = rs.stream.color
         self.align = rs.align(align_to)
-        self.intrinsics = self.profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
-        # cv2.namedWindow('depth_cam', cv2.WINDOW_AUTOSIZE)
-        # cv2.namedWindow('rgb_cam', cv2.WINDOW_AUTOSIZE)
+
+        self.color_intrinsics = self.profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+        self.depth_intrinsics = self.profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
+        # because depth is aligned to color in this pipeline, use color intrinsics for aligned depth pixels
+        self.aligned_depth_intrinsics = self.color_intrinsics
+
         self.startTime = time.time()
         self.cam_calibration()
 
@@ -132,7 +140,7 @@ class Camera:
             frame = np.asanyarray(color.get_data())
             vis = frame.copy()
             K = np.array(
-                [[self.intrinsics.fx, 0, self.intrinsics.ppx], [0, self.intrinsics.fy, self.intrinsics.ppy], [0, 0, 1]],
+                [[self.color_intrinsics.fx, 0, self.color_intrinsics.ppx], [0, self.color_intrinsics.fy, self.color_intrinsics.ppy], [0, 0, 1]],
                 dtype=np.float64,
             )
             dist = np.zeros((5, 1), dtype=np.float64)
@@ -143,7 +151,7 @@ class Camera:
 
             # 1) camera -> marker transform (R,t)
             ok_pose, R_m_c, t_m_c, method, all_corners, ids = get_camera_to_marker_transform(
-                frame, depth, self.intrinsics, K, dist, dictionary, params, obj_pts_marker
+                frame, depth, self.aligned_depth_intrinsics, K, dist, dictionary, params, obj_pts_marker
             )
 
             if ids is not None:
@@ -253,11 +261,9 @@ class Camera:
         frame = rgb.get_data()
         frame = np.asanyarray(frame)
         vis = frame.copy()
-        # self.current_frame = np.asanyarray(frame.copy(),dtype=np.uint8)
-        # print("current frame set in camera object...")
-        last_pts = []
+
         # 2) ball detection
-        found_ball, ball_info, mask = detect_ball_center(frame, self.bs, last_pts, ball_color=GREEN_BALL_COLOR)
+        found_ball, ball_info, mask = detect_ball_center(frame, self.bs, ball_color=GREEN_BALL_COLOR)
         if found_ball:
             # print("BALL DETECTED ...")
             self.u, self.v, best = ball_info
@@ -271,7 +277,7 @@ class Camera:
             # depth -> 3D in camera frame
             self.z = robust_depth_at_pixel(depth, self.u, self.v, BALL_DEPTH_RADIUS_PX)
             if self.z > 0:
-                P_ball_cam = deproject(self.u, self.v, self.z, self.intrinsics)  # meters
+                P_ball_cam = deproject(self.u, self.v, self.z, self.aligned_depth_intrinsics)  # meters
                 # Transform from camera frame to robot base frame
                 xR, yR, zR = self.T_Camera_to_RobotBase(P_ball_cam)
 
@@ -280,7 +286,7 @@ class Camera:
             #     print("Invalid depth for ball ...")
         # else:
         #     print("BALL NOT DETECTED ...")
-        return (np.asarray([0, 0, 0], dtype=np.float64), found_ball)
+        return (None, False)
 
     def T_Camera_to_RobotBase(self, P_ball_cam: np.ndarray) -> tuple[float, float, float]:
         """Transform from camera frame to robot frame
@@ -320,7 +326,7 @@ class Camera:
         # Project XYZ_cam to pixel coordinates
         u, v = tuple(
             rs.rs2_project_point_to_pixel(
-                self.intrinsics,
+                self.color_intrinsics,
                 [
                     P_ball_cam[:3, 0].reshape(
                         3,
@@ -538,7 +544,7 @@ def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictio
     return True, R_marker_from_cam, t_marker_from_cam, method, all_corners, ids
 
 
-def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COLOR, using_bg_sub: bool = True):
+def detect_ball_center(frame_bgr, bs, ball_color: int = WHITE_BALL_COLOR, using_bg_sub: bool = True):
     """Detects the ball center in the frame using the frame, background subtractor and last detected points.
 
     Args:
@@ -595,14 +601,6 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    pred = None
-    if len(last_pts) >= 2:
-        print("len(last_pts): ", len(last_pts))
-        (x1, y1), (x2, y2) = last_pts[-2], last_pts[-1]
-        pred = (x2 + (x2 - x1), y2 + (y2 - y1))
-    elif len(last_pts) == 1:
-        pred = last_pts[-1]
-
     best = None
     for c in contours:
         area = cv2.contourArea(c)
@@ -633,11 +631,8 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         cx = M["m10"] / M["m00"]
         cy = M["m01"] / M["m00"]
 
-        dist_pred = 0.0
-        if pred is not None:
-            dist_pred = math.hypot(cx - pred[0], cy - pred[1])
 
-        dist_score = -40.0 * dist_pred
+        dist_score = 0
         area_score = 0.25 * area
         circ_score = 350.0 * circ
         solid_score = 250.0 * solid
@@ -661,9 +656,6 @@ def detect_ball_center(frame_bgr, bs, last_pts, ball_color: int = WHITE_BALL_COL
         return False, None, dict(mask=mask)
 
     u, v = int(round(best["cx"])), int(round(best["cy"]))
-    last_pts.append((best["cx"], best["cy"]))
-    if len(last_pts) > 10:
-        last_pts[:] = last_pts[-10:]
     return True, (u, v, best), dict(mask=mask)
 
 

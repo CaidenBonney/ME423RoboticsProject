@@ -1,7 +1,15 @@
 # Special QArm library imports
+import importlib.util
+import os
 from typing import Optional
 
-from pal.products.qarm import QArm
+module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../QarmHardwareFiles/AdjustedQarmHardwareFiles/qarm.py"))
+
+# Load the module dynamically
+spec = importlib.util.spec_from_file_location("qarm", module_path)
+qarm = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(qarm)
+
 from hal.products.qarm import QArmUtilities
 
 # Standard library imports
@@ -21,9 +29,9 @@ class Arm:
     def __init__(self) -> None:
         # Internal variables from basic position mode py files
         self.startTime = time.time()
-        self.sampleRate = 200
+        self.sampleRate = 1000  # [Hz]
         self.sampleTime = 1 / self.sampleRate
-        self.myArm = QArm(hardware=1)
+        self.myArm = qarm.QArm(hardware=1)
         self.myArmUtilities = QArmUtilities()
 
         # Internal variables for current state of the arm
@@ -55,6 +63,8 @@ class Arm:
         self.T04 = np.identity(4, dtype=np.float64)
         self.L_6 = 0.25
 
+        
+
         # ── Interceptor instances ──────────────────────────────────────────────
         # catch_z: the z-height [m] in robot-base frame where you want to catch
         # the ball.  Set this to a height the ball actually passes through.
@@ -62,13 +72,15 @@ class Arm:
         # catch plane that is (a) below the ball's starting height so the
         # descending arc crosses it, and (b) above the 0.10 m workspace floor.
         # Tune this to match your physical setup.
-        _catch_z = 0.30   # [m]
+        self.fixedX = 0.6 # [m]
+        self._catch_z = 0.30   # [m]
+        self.veloOvershoot = 0.15
 
-        self.ballistic_interceptor   = BallisticInterceptor(catch_z=_catch_z)
-        self.kalman_tracker          = KalmanBallTracker(catch_z=_catch_z)
-        self.reachability_interceptor = ReachabilityInterceptor(catch_z=_catch_z)
-        self.ransac_fitter           = RansacBallFitter(catch_z=_catch_z)
-        self.ewma_interceptor        = EWMAInterceptor(catch_z=_catch_z)
+        self.ballistic_interceptor   = BallisticInterceptor(catch_z=self._catch_z)
+        self.kalman_tracker          = KalmanBallTracker(catch_z=self._catch_z)
+        self.reachability_interceptor = ReachabilityInterceptor(catch_z=self._catch_z)
+        self.ransac_fitter           = RansacBallFitter(catch_z=self._catch_z)
+        self.ewma_interceptor        = EWMAInterceptor(catch_z=self._catch_z)
 
         self.home()
 
@@ -347,9 +359,13 @@ class Arm:
             self.interception_point_ROBOT = None
             self.interception_time = None
             return self.prev_phi_cmd
+            intercept = np.array([self.fixedX, XYZ[1], self._catch_z], dtype=np.float64)
+            # if self.ballistic_interceptor._vy != 0:
+                # intercept[1] += self.ballistic_interceptor._vy * self.veloOvershoot
 
-        print(f"[ballistic] intercept={np.round(intercept, 3)}")
-        self.interception_point_ROBOT = intercept
+        else:
+            print(f"[ballistic] intercept={np.round(intercept, 3)}")
+            self.interception_point_ROBOT = intercept
 
         phi_cmd = self._resolve_ik(intercept)
         if phi_cmd is None:

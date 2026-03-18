@@ -33,6 +33,7 @@ class ArmOverlayState:
     last_timestamp: Optional[float] = None
     interception_point_ROBOT: Optional[np.ndarray] = None
     interception_time: Optional[float] = None
+    trajMade: bool = False
 
 
 class SharedLatest:
@@ -111,26 +112,35 @@ def draw_arm_overlay(
     arm_state: Optional[ArmOverlayState],
 ) -> np.ndarray:
     out = frame.copy()
-
+    y_offset = 30
     if snap is not None and snap.ball_found and snap.ballXYZ is not None:
         x, y, z = np.asarray(snap.ballXYZ).reshape(3)
         cv2.putText(out, f"ballXYZ: [{x:.3f}, {y:.3f}, {z:.3f}]",
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
+                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
+        y_offset += 30
 
     if arm_state is not None and arm_state.phi_cmd is not None:
         phi = np.asarray(arm_state.phi_cmd).reshape(-1)
         cv2.putText(out,
                     f"phi_cmd: [{phi[0]:.3f}, {phi[1]:.3f}, {phi[2]:.3f}, {phi[3]:.3f}]",
-                    (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
+                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
+        y_offset += 30
 
     if arm_state is not None and arm_state.pos_cmd is not None:
         pos = np.asarray(arm_state.pos_cmd).reshape(-1)
         cv2.putText(out, f"pos_cmd: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]",
-                    (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
+                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
+        y_offset += 30
 
     if snap is not None and snap.timestamp is not None:
         cv2.putText(out, f"timestamp: {snap.timestamp}",
-                    (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
+                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
+        y_offset += 30
+
+    if snap is not None and arm_state is not None:
+        cv2.putText(out, f"Trajectoy made: {arm_state.trajMade}",
+                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
+        y_offset += 30
 
     if arm_state is not None and arm_state.future_robot_points is not None:
         for xyz in np.asarray(arm_state.future_robot_points):
@@ -186,9 +196,9 @@ def camera_worker(
             )
             latest_cam_snapshot.set(snapshot)
 
-            if ballXYZ is not None:
+            if timestamp is not None:
                 ballXYZ_queue.put_latest((
-                    np.asarray(ballXYZ, dtype=np.float64).reshape(3),
+                    np.asarray(ballXYZ, dtype=np.float64).reshape(3) if ballXYZ is not None else None,
                     bool(ball_found),
                     float(timestamp),
                 ))
@@ -234,37 +244,36 @@ def arm_worker(
                 # catch_z is set once in Arm.__init__ (_catch_z variable).
                 # ──────────────────────────────────────────────────────────────
                 phi_cmd = arm.ballXYZ_to_phi_cmd_ballistic(ballXYZ, ball_found, timestamp)
-
                 interception_point_ROBOT = arm.interception_point_ROBOT
                 interception_time = arm.interception_time
                 future_pts = []
-                if arm.traj.t.size > 0:
+                if arm.ballistic_interceptor._valid:
                     for i in range(future_points_drawn):
                         t_future = arm.traj.t[-1] + i * timestep
-                        pred = np.asarray(arm.traj.predict_pos(t_future), dtype=np.float64).reshape(3)
+                        pred = np.asarray(arm.ballistic_interceptor.predict_pos(t_future), dtype=np.float64).reshape(3)
                         future_pts.append(pred)
                 future_pts_arr = np.asarray(future_pts, dtype=np.float64)
                 past_pts = np.asarray(arm.traj.pos[-past_points_drawn:, :], dtype=np.float64)
-
                 latest_arm_state.set(
                     ArmOverlayState(
                         phi_cmd=np.asarray(arm.phi_cmd, dtype=np.float64).reshape(4),
                         pos_cmd=np.asarray(arm.pos_cmd, dtype=np.float64).reshape(3),
                         future_robot_points=future_pts_arr,
                         past_robot_points=past_pts,
-                        last_ballXYZ=np.asarray(ballXYZ, dtype=np.float64).reshape(3),
+                        last_ballXYZ=np.asarray(ballXYZ, dtype=np.float64).reshape(3) if ballXYZ is not None else None,
                         last_timestamp=float(timestamp),
                         interception_point_ROBOT=(
                             np.asarray(interception_point_ROBOT, dtype=np.float64).reshape(3)
                             if interception_point_ROBOT is not None else None
                         ),
                         interception_time=float(interception_time) if interception_time is not None else None,
+                        trajMade = arm.ballistic_interceptor._valid
                     )
                 )
-
                 if not moved:
                     arm.move(phi_Cmd=phi_cmd)
                     moved = True
+
 
             except ValueError as e:
                 print(f"Command error: {e}")
