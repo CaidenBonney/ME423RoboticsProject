@@ -249,11 +249,11 @@ def arm_worker(
                 future_pts = []
                 if arm.ballistic_interceptor._valid:
                     for i in range(future_points_drawn):
-                        t_future = arm.traj.t[-1] + i * timestep
+                        t_future = arm.ballistic_interceptor._t[-1] + i * timestep
                         pred = np.asarray(arm.ballistic_interceptor.predict_pos(t_future), dtype=np.float64).reshape(3)
                         future_pts.append(pred)
                 future_pts_arr = np.asarray(future_pts, dtype=np.float64)
-                past_pts = np.asarray(arm.traj.pos[-past_points_drawn:, :], dtype=np.float64)
+                past_pts = np.asarray(arm.ballistic_interceptor._pos[-past_points_drawn:, :], dtype=np.float64)
                 latest_arm_state.set(
                     ArmOverlayState(
                         phi_cmd=np.asarray(arm.phi_cmd, dtype=np.float64).reshape(4),
