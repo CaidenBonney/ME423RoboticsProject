@@ -13,7 +13,7 @@ MARKER_ID = 67
 MARKER_LENGTH_M = 0.1889  # marker side length in meters (0.1889 m = 7.437 inches)
 ARUCO_DICT = cv2.aruco.DICT_4X4_250
 
-W, H, FPS = 640, 480, 60
+W, H, FPS = 848, 480, 30  # camera stream width, height, and frames per second
 
 NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
 BALL_DEPTH_RADIUS_PX = 2  # depth sampling neighborhood for ball center
