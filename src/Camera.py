@@ -8,18 +8,17 @@ import pyrealsense2 as rs
 import math
 
 # ---------------- USER CONFIG ----------------
-MARKER_ID = 67
-# MARKER_LENGTH_M = 0.07
-MARKER_LENGTH_M = 0.1889  # marker side length in meters (0.1889 m = 7.437 inches)
-ARUCO_DICT = cv2.aruco.DICT_4X4_250
+MARKER_ID = 67 # ArUco marker ID
+MARKER_LENGTH_M = 0.1889  # ArUco marker side length in meters (0.1889 m = 7.437 inches)
+ARUCO_DICT = cv2.aruco.DICT_4X4_250 # ArUco dictionary
 
-W, H, FPS = 640, 480, 60
+W, H, FPS = 640, 480, 60 # Camera resolution and FPS
 
 NEIGHBOR_RADIUS_PX = 2  # depth sampling neighborhood for marker corners
 BALL_DEPTH_RADIUS_PX = 4  # depth sampling neighborhood for ball center
-MIN_VALID_CORNERS = 3
+MIN_VALID_CORNERS = 3 # minimum number of corners to consider a valid marker
 
-# Ball detector thresholds (tune if needed)
+# Ball detector modes
 WHITE_BALL_COLOR = 0
 ORANGE_BALL_COLOR = 1
 GREEN_BALL_COLOR = 2
@@ -29,74 +28,93 @@ SPIKE_BALL_COLOR = 3
 # White mask values
 S_HIGH = 70
 V_LOW = 185
+
+# Ball detector thresholds (tune if needed)
 AREA_MIN = 4
 AREA_MAX = 12000
 CIRC_MIN = 0.25
 SOLID_MIN = 0.40
 ASPECT_MAX = 1.8
-WARMUP_FRAMES = 30
+
+WARMUP_FRAMES = 30 # number of frames to capture is feed to background subtractor
 
 CALIBRATION_FILE = "camera_calib.yml"
 
 
 class Camera:
+    """Camera class for handling RealSense D435 camera, ball detection, and position tracking."""
     def __init__(self) -> None:
-        self.startTime = time.time()
+        self.startTime = time.time() # time since camera was initialized
         self.sampleRate = FPS  # [Hz] how often to capture/process frames from the camera. Can be lower than the camera FPS to reduce noise and CPU load.
         self.sampleTime = 1 / self.sampleRate
-        self.bs = None  # background susbtractor mpdel
+        
+        self.color_intrinsics = None # RGB camera intrinsics
+        self.depth_intrinsics = None # depth camera intrinsics
+        self.aligned_depth_intrinsics = None # aligned depth camera intrinsics
 
-        self.color_intrinsics = None
-        self.depth_intrinsics = None
-        self.aligned_depth_intrinsics = None
-
-        self.T_cam2ArUco = None  # transformation from camera frame to robot frame
-        self.T_cam2ArUco_inv = None  # inverse of T_cam2ArUco
         self.pipeline = None  # realsense pipeline
         self.profile = None  # realsense pipeline profile
         self.align = None  # realsense align object
         self.cameraPortID = 3  # This number may be different for every machine. It corresponds to the port that the camera is attached to
-        self.camera_matrix = None
-        self.dist_coeffs = None
-        self.u: Optional[int] = None
-        self.v: Optional[int] = None
-        self.z: Optional[float] = None
+
+        
+        # Camera calibration (focal length, principal point, distortion coefficients)
+        self.camera_matrix = None # No longer used, experimentally gathered
+        self.dist_coeffs = None # No longer used, experimentally gathered
+
+        self.bs = None  # background susbtractor model
+
+        self.u: Optional[int] = None # "x" coordinate of ball in aligned camera frame [pixels]
+        self.v: Optional[int] = None # "y" coordinate of ball in aligned camera frame [pixels]
+        self.z: Optional[float] = None # depth measurement of ball from camera [meters] (This is a distance normal from the camera to the ball)
+
+        # temp variables for ball detection, logged best detection score, used for debugging
         self.score = None
         self.score_parts = None
-        self.rvec_draw = None
-        self.tvec_draw = None
-        self.R_m_c = None
-        self.t_m_c = None
+
+        # Relevant Transformations
+        self.R_m_c = None # rotation matrix from camera frame to ArUco frame [3x3]
+        self.t_m_c = None # translation vector from camera frame to ArUco frame [3x3]
+        self.T_cam2ArUco = None  # transformation from camera frame to ArUco frame [4x4]
+        self.T_cam2ArUco_inv = None  # inverse of T_cam2ArUco
+
+        ## transformation from ArUco frame to base frame [4x4] (measured and tuned)
         self.ArUco2Base_Transformation = np.array(
             [[1, 0, 0, 0.622], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64
-        )
+        ) 
+
+        ## inverse of ArUco2Base_Transformation
         self.ArUco2Base_Transformation_inv = np.linalg.inv(self.ArUco2Base_Transformation)
-        # self.Base_ArUco_Transformation = np.array([[1, 0, 0, 0.402], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
-        # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, -0.1], [0, -1, 0, 0.010], [0, 0, 0, 1]], dtype=np.float64)
-        # self.Base_ArUco_Transformation = np.array([[-1, 0, 0, 0.09681], [0, 0, -1, 0.05332], [0, -1, 0, -0.10954], [0, 0, 0, 1]], dtype=np.float64)
+
+        # RGB frame, used for upstream display and debugging
         self.current_frame = np.zeros((640, 480, 3), dtype=np.uint8)
+
+        # Runs camera setup processes
         self.cam_setup()
 
     def elapsed_time(self) -> float:
+        """Time elapsed since camera was initialized."""
         return time.time() - self.startTime
 
     def capture_image(self) -> rs.align:
         """Captures an RGB and depth frame from the camera.
         Images are aligned."""
 
+        # Grab frames from hardware (aligned)
         frames = self.pipeline.wait_for_frames()
         aligned_frames = self.align.process(frames)
         rgb = aligned_frames.get_color_frame()
-        depth = aligned_frames.get_depth_frame()
-        depth_image = np.asarray(depth.get_data(), dtype=np.uint8)
+
+        # depth = aligned_frames.get_depth_frame()
+        # depth_image = np.asarray(depth.get_data(), dtype=np.uint8)
+        
         frame = rgb.get_data()
         frame = np.asanyarray(frame)
         self.current_frame = np.asanyarray(frame, dtype=np.uint8)
-        # print("current frame set in camera object...")
         return aligned_frames
 
     def cam_setup(self) -> None:
-        # TODO: add camera initialization (device open, stream config, etc.).
+        """Configures RealSense D435 camera, starts streaming, and configures camera alignment using ArUco (blocking)."""
         # configure depth and color streamss
         self.pipeline = rs.pipeline()
         cfg = rs.config()
@@ -104,6 +122,7 @@ class Camera:
         cfg.enable_stream(rs.stream.color, W, H, rs.format.bgr8, FPS)
         self.profile = self.pipeline.start(cfg)
 
+        # align to color stream
         align_to = rs.stream.color
         self.align = rs.align(align_to)
 
@@ -117,34 +136,40 @@ class Camera:
 
     def cam_calibration(self, path: str = "camera_calib.yml") -> None:
         """Executes the following camera setup steps:
-        1. Loads the camera calibration file to remove fishey distortion.
+        1. Loads the camera calibration file to remove fish eye distortion.
         2. Solves the camera to robot transformation.
         3. Creates the background subtractor model.
         """
 
+        # How to load calibration information: not used anymore
         self.camera_matrix, self.dist_coeffs = load_calibration(CALIBRATION_FILE)
+
         print("SOLVING CAMERA TO ROBOT TRANSFORMATION ...")
         self.get_robot_transformation()
         print("ROBOT TRANSFORMATION SOLVED...")
         self.create_background_model()
         print("BACKGROUND MODEL CREATED...")
 
-    def get_robot_transformation(self) -> np.ndarray:
-
+    def get_robot_transformation(self) -> None:
+        """ Finds the camera to robot transformation using ArUco markers. (BLOCKING)"""
+        
         marker_found = False
         while not marker_found:
+            # Grab frames from hardware (aligned)
             frames = self.pipeline.wait_for_frames()
             aligned_frames = self.align.process(frames)
             color = aligned_frames.get_color_frame()
             depth = aligned_frames.get_depth_frame()
             frame = np.asanyarray(color.get_data())
-            vis = frame.copy()
+
+            # camera intrinsics from RealSense SDK
             K = np.array(
                 [[self.color_intrinsics.fx, 0, self.color_intrinsics.ppx], [0, self.color_intrinsics.fy, self.color_intrinsics.ppy], [0, 0, 1]],
                 dtype=np.float64,
             )
             dist = np.zeros((5, 1), dtype=np.float64)
 
+            # ArUco marker detection
             dictionary = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
             params = cv2.aruco.DetectorParameters()
             obj_pts_marker = create_marker_object_points(MARKER_LENGTH_M)
@@ -155,23 +180,12 @@ class Camera:
             )
 
             if ids is not None:
-                # cv2.aruco.drawDetectedMarkers(vis, all_corners, ids)
-                # cv2.imshow("camera_to_marker", vis)
-                print("ARUCO MARKER DETCTED ...")
-                # cv2.waitKey(0)
+                print("AN ARUCO MARKER WAS DETECTED ...")
 
             if ok_pose:
                 print("Camera to marker pose found")
-                # Draw axes (need marker->camera pose; invert back for drawing)
-                # marker->camera: R_c_m = R_m_c^T, t_c_m = -R_c_m * t_m_c
-                # R_c_m = R_m_c.T
-                # t_c_m = -R_c_m @ t_m_c
-                # rvec_draw, _ = cv2.Rodrigues(R_c_m)
-                # tvec_draw = t_c_m.reshape(3, 1)
-                # self.rvec_draw = rvec_draw
-                # self.tvec_draw = tvec_draw
-                self.R_m_c = R_m_c
-                self.t_m_c = t_m_c
+                self.R_m_c = R_m_c # rotation matrix from camera frame to ArUco frame [3x3]
+                self.t_m_c = t_m_c # translation vector from camera frame to ArUco frame [3x3]
                 self.T_cam2ArUco = build_T(self.R_m_c, self.t_m_c)
                 self.T_cam2ArUco_inv = np.linalg.inv(self.T_cam2ArUco)
                 marker_found = True
@@ -262,17 +276,14 @@ class Camera:
         frame = np.asanyarray(frame)
         vis = frame.copy()
 
-        # 2) ball detection
+        # ball detection
         found_ball, ball_info, mask = detect_ball_center(frame, self.bs, ball_color=GREEN_BALL_COLOR)
         if found_ball:
-            # print("BALL DETECTED ...")
             self.u, self.v, best = ball_info
             self.score = best["score"]
             self.score_parts = best["score_parts"]
             cv2.circle(self.current_frame, (self.u, self.v), 5, (255, 0, 0), -1)
             cv2.drawContours(self.current_frame, [best["hull"]], -1, (0, 255, 0), 2)
-
-            # cv2.imshow("ball", vis)
 
             # depth -> 3D in camera frame
             self.z = robust_depth_at_pixel(depth, self.u, self.v, BALL_DEPTH_RADIUS_PX)
@@ -282,10 +293,12 @@ class Camera:
                 xR, yR, zR = self.T_Camera_to_RobotBase(P_ball_cam)
 
                 return (np.asarray([xR, yR, zR], dtype=np.float64), found_ball)
-            # else:
-            #     print("Invalid depth for ball ...")
-        # else:
-        #     print("BALL NOT DETECTED ...")
+            else:
+                # print("Invalid depth for ball ...")
+                pass
+        else:
+            # print("BALL NOT DETECTED ...")
+            pass
         return (None, False)
 
     def T_Camera_to_RobotBase(self, P_ball_cam: np.ndarray) -> tuple[float, float, float]:
@@ -347,16 +360,9 @@ class Camera:
             return None, False, None
         timestamp = RBGD_frames.get_timestamp()
 
-        # Obtain Ball XYZ from RGBD frame and
+        # Obtain Ball XYZ from RGBD frame
         XYZ, ball_found = self.image_processing(RBGD_frames)
 
-        # XYZ = self.image_processing(input)
-
-        # XYZ = np.random.uniform(
-        #     low=np.array([0.50, -0.10, 0.55], dtype=np.float64),
-        #     high=np.array([0.40, 0.10, 0.45], dtype=np.float64),
-        # )
-        # print("ball position in Robot Coordinates: ", XYZ)
         return XYZ, ball_found, timestamp
 
     def show_image(self):
@@ -380,12 +386,17 @@ def create_marker_object_points(marker_length_m: float) -> np.ndarray:
 
 # ---------------- UTILS ----------------
 def robust_depth_at_pixel(depth_frame, u: int, v: int, radius: int) -> float:
+    """Estimates the depth at a pixel location using a radius-based median filter."""
+    
+    # If radius is <= 0, return the depth at the specified pixel location
     if radius <= 0:
         return float(depth_frame.get_distance(u, v))
     vals = []
     for dv in range(-radius, radius + 1):
         for du in range(-radius, radius + 1):
             uu, vv = u + du, v + dv
+
+            # Try to get the depth at the specified pixel location, errors from pixels out of bounds are caught and ignored
             try:
                 z = float(depth_frame.get_distance(uu, vv))
                 if z > 0:
@@ -398,11 +409,24 @@ def robust_depth_at_pixel(depth_frame, u: int, v: int, radius: int) -> float:
 
 
 def deproject(u: int, v: int, depth_m: float, intr: rs.intrinsics) -> np.ndarray:
+    """Calls RealSense SDK to deproject a pixel location to 3D coordinates in the camera frame. 
+    
+    Args:
+        u (int): The "x" coordinate of the pixel location in the aligned camera frame.
+        v (int): The "y" coordinate of the pixel location in the aligned camera frame.
+        depth_m (float): The depth of the pixel location in the aligned camera frame.
+        intr (rs.intrinsics): The depth camera intrinsics.
+
+    Returns:
+        p (np.ndarray): The 3D coordinates of the pixel location in the camera frame.
+    """
+
     p = rs.rs2_deproject_pixel_to_point(intr, [float(u), float(v)], float(depth_m))
     return np.array(p, dtype=np.float64)  # [X,Y,Z] meters in camera frame
 
 
 def build_T(R: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """Builds a 4x4 homogeneous transformation matrix from rotation and translation vectors."""
     T = np.eye(4, dtype=np.float64)
     T[:3, :3] = R
     T[:3, 3] = t.reshape(3)
@@ -410,7 +434,7 @@ def build_T(R: np.ndarray, t: np.ndarray) -> np.ndarray:
 
 
 def kabsch_rigid_transform(A: np.ndarray, B: np.ndarray):
-    # B ≈ R*A + t
+    """Uses Kabsch algorithm to find the optimal rotation and translation to align two sets of points."""
     if A.shape[0] < 3:
         return None, None
     centroid_A = A.mean(axis=0)
@@ -428,6 +452,21 @@ def kabsch_rigid_transform(A: np.ndarray, B: np.ndarray):
 
 
 def detect_marker_corners(frame_bgr: np.ndarray, marker_id: int, dictionary, params):
+    """Uses CV2 to detect ArUco markers and their corners. Reformats data for easier processing.
+    
+    Args:
+        frame_bgr (np.ndarray): The frame to detect the marker in.
+        marker_id (int): The ID of the marker to detect.
+        dictionary (cv2.aruco.getPredefinedDictionary): The marker dictionary.
+        params (cv2.aruco.DetectorParameters): The marker detector parameters.
+
+    Returns:
+        found (bool): True if the specified marker was detected, False otherwise.
+        corners_uv (np.ndarray): The corners of the detected marker in the camera frame.
+        all_corners (np.ndarray): The corners of all detected markers in the camera frame.
+        ids (np.ndarray): The IDs of all detected markers.
+    """
+    
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
     detector = cv2.aruco.ArucoDetector(dictionary, params)
     all_corners, ids, _ = detector.detectMarkers(gray)
@@ -452,6 +491,19 @@ def estimate_translation_from_depth_corners(
     intr: rs.intrinsics,
     radius_px: int,
 ) -> np.ndarray | None:
+    """Estimates the translation vector from the corners of a marker in the camera frame to the object frame.
+    
+    Args:
+        R_cam_from_marker (np.ndarray): The rotation matrix from the camera frame to the marker frame.
+        corners_uv (np.ndarray): The corners of the marker in the camera frame.
+        obj_pts_marker (np.ndarray): The corners of the marker in the object frame.
+        depth_frame (rs.frame): The depth frame to estimate the camera to marker transform in.
+        intr (rs.intrinsics): The camera intrinsics.
+        radius_px (int): The radius of the median filter to use for robust depth estimation.
+
+    Returns:
+        t_list (np.ndarray): The translation vector from the corners of the marker in the camera frame to the object frame.
+    """
     t_list = []
     for (u, v), P_obj in zip(corners_uv, obj_pts_marker):
         ui, vi = int(round(u)), int(round(v))
@@ -496,8 +548,10 @@ def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictio
         return False, None, None, "Marker not found", all_corners, ids
 
     # gather 3D corner points from depth
-    P_cam_list = []
-    P_obj_list = []
+    P_cam_list = [] # list of 3D points in camera frame
+    P_obj_list = [] # list of 3D points in object frame
+
+    # For each corner in the marker, estimate the depth at the corner and deproject it to the camera frame
     for (u, v), P_obj in zip(corners_uv, obj_pts_marker):
         ui, vi = int(round(u)), int(round(v))
         z = robust_depth_at_pixel(depth_frame, ui, vi, NEIGHBOR_RADIUS_PX)
@@ -506,24 +560,27 @@ def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictio
         P_cam_list.append(deproject(ui, vi, z, intr))
         P_obj_list.append(P_obj)
 
+    # Convert lists to arrays
     P_cam_arr = np.array(P_cam_list, dtype=np.float64)
     P_obj_arr = np.array(P_obj_list, dtype=np.float64)
     if P_cam_arr.shape[0] < MIN_VALID_CORNERS:
         return False, None, None, "Not enough valid depth corners", all_corners, ids
 
-    # A) Hybrid: rotation from PnP, translation from depth corners
+    # Issue to fix: translation vector from camera frame to marker was inconsistent
+    # Option A) Hybrid: rotation from PnP, translation from depth corners
     ok_pnp, rvec, _tvec = cv2.solvePnP(
         obj_pts_marker.astype(np.float32), corners_uv.astype(np.float32), K, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE
     )
 
     if ok_pnp:
         R_cam_from_marker, _ = cv2.Rodrigues(rvec)
+        # Need to estimate the translation vector from the corners of the marker in the camera frame to the object frame
         t_cam_from_marker = estimate_translation_from_depth_corners(
             R_cam_from_marker, corners_uv, obj_pts_marker, depth_frame, intr, NEIGHBOR_RADIUS_PX
         )
         if t_cam_from_marker is not None:
-            R = R_cam_from_marker
-            t = t_cam_from_marker
+            R = R_cam_from_marker # R is the rotation matrix to the camera frame frome the marker frame
+            t = t_cam_from_marker # t is the translation vector to the camera frame from the marker frame
             method = "Hybrid (R from PnP, t from depth)"
         else:
             R, t, method = None, None, ""
@@ -537,8 +594,6 @@ def get_camera_to_marker_transform(frame_bgr, depth_frame, intr, K, dist, dictio
             return False, None, None, "Pose failed", all_corners, ids
         method = "Kabsch (pose from depth corners)"
 
-    # marker->camera: P_cam = R*P_marker + t
-    # camera->marker:
     R_marker_from_cam = R.T
     t_marker_from_cam = -R_marker_from_cam @ t
     return True, R_marker_from_cam, t_marker_from_cam, method, all_corners, ids
@@ -555,9 +610,12 @@ def detect_ball_center(frame_bgr, bs, ball_color: int = WHITE_BALL_COLOR, using_
 
     Returns:
       (found: Boolean, Optional[(u,v, best: dict)], "dict(mask=mask)")"""
+    
+    # Convert to HSV
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
     k5 = np.ones((5, 5), np.uint8)
-    # select ball color
+
+    # Depending on the ball color selected, create color mask 
     if ball_color == WHITE_BALL_COLOR:
         color_mask = cv2.inRange(hsv, (0, 0, V_LOW), (179, S_HIGH, 255))
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
@@ -585,16 +643,19 @@ def detect_ball_center(frame_bgr, bs, ball_color: int = WHITE_BALL_COLOR, using_
         color_mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, k5, iterations=1)
         color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, k5, iterations=2)
-
     else:
         raise ValueError(f"Invalid ball color: {ball_color}")
 
+    # If background subtraction is used, apply it to the frame
     if using_bg_sub:
         k3 = np.ones((3, 3), np.uint8)
 
         fg = bs.apply(frame_bgr, learningRate=0.002)
+        # erosion and dilation to remove small balls
         fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, k3, iterations=1)
+        # dilate fill gaps in ball contour, use larger kernel for better results
         fg = cv2.dilate(fg, k5, iterations=1)
+        # Only pixels captured by color mask AND bg subtraction are considered
         mask = cv2.bitwise_and(fg, color_mask)
     else:
         mask = color_mask
@@ -602,44 +663,54 @@ def detect_ball_center(frame_bgr, bs, ball_color: int = WHITE_BALL_COLOR, using_
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     best = None
+    # For each contour, calculate the circularity and solidty of the contour
     for c in contours:
         area = cv2.contourArea(c)
+        # Area filter
         if area < AREA_MIN or area > AREA_MAX:
             continue
 
+        # Must have perimeter
         peri = cv2.arcLength(c, True)
         if peri <= 0:
             continue
+
+        # Calculate circularity
         circ = 4 * math.pi * area / (peri * peri)
 
+        # Calculate solidty
         hull = cv2.convexHull(c)
         hull_area = cv2.contourArea(hull)
         solid = (area / hull_area) if hull_area > 0 else 0.0
 
-        mean_hue, _ = mean_hue_in_hull(frame_bgr, hull)
+        # mean_hue, _ = mean_hue_in_hull(frame_bgr, hull)
         # hue_diff = abs(mean_hue - mean_green[0])
 
+        # bounding box dims
         x, y, w, h = cv2.boundingRect(c)
         aspect = max(w / max(1, h), h / max(1, w))
 
+        # circularity, solidity, and bounding box aspect ratio filtering
         if circ < CIRC_MIN or solid < SOLID_MIN or aspect > ASPECT_MAX:
             continue
 
+        # find centroid
         M = cv2.moments(c)
         if M["m00"] == 0:
             continue
         cx = M["m10"] / M["m00"]
         cy = M["m01"] / M["m00"]
 
-
-        dist_score = 0
-        area_score = 0.25 * area
-        circ_score = 350.0 * circ
-        solid_score = 250.0 * solid
-        aspect_score = -60.0 * aspect
+        # score based off calculated metrics
+        dist_score = 0 # no longer used
+        area_score = 0.25 * area # no longer used: only logged
+        circ_score = 350.0 * circ # circularity score
+        solid_score = 250.0 * solid # solidity score
+        aspect_score = -60.0 * aspect # bounding box aspect ratio score
         # color_score = -90.0 * hue_diff
-        color_score = 0.0  # disable color score for now since it seems to hurt more than help; tune weight and thresholds if re-enabling
+        color_score = 0.0  # no longer used (used to do above)
 
+        # best score for this contour
         score = dist_score + circ_score + solid_score + aspect_score + color_score
 
         if best is None or (score > best["score"]):
