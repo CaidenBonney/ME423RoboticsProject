@@ -5,6 +5,11 @@ Compilation of all code for the Cal Poly ME423 Robotics Project
 ## Python Version for venv: 
 3.12.10
 
+# Information workflow and file structure
+## Workflow
+The workflow is as follows:
+1.
+
 ## Windows Installation Instructions:
 ### Go to Windows Powershell and paste the following:
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
