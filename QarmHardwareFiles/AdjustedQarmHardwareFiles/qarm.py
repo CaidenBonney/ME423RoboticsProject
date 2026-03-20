@@ -46,10 +46,15 @@ class QArm():
         self.mode = np.array([0, 0, 0, 0, 0], dtype=np.uint8) # only supporting
                                                               # position mode
                                                               # at the moment
-        # self.profileVelocity = np.array([1.5708, 1.5708, 1.5708, 1.5708], dtype=np.float64)
+        
+        # profileVelocity is the maximum velocity of the joints in rad/s during spline creation
+        # self.profileVelocity = np.array([1.5708, 1.5708, 1.5708, 1.5708], dtype=np.float64)  # Original Settings
         self.profileVelocity = np.array([4, 3, 3, 3], dtype=np.float64)
-        # self.profileAcceleration = np.array([1.0472, 1.0472, 1.0472, 1.0472], dtype=np.float64)
+        
+        # profileVelocity is the maximum velocity of the joints in rad/s during spline creation
+        # self.profileAcceleration = np.array([1.0472, 1.0472, 1.0472, 1.0472], dtype=np.float64)  # Original Settings
         self.profileAcceleration = np.array([3, 2, 2, 2], dtype=np.float64)
+        
         self.card = HIL()
         if self.hardware:
             boardIdentifier = str(deviceId)
@@ -65,6 +70,7 @@ class QArm():
             f"j2_profile_config=0;j2_profile_velocity={self.profileVelocity[2]};j2_profile_acceleration={self.profileAcceleration[2]};"
             f"j3_profile_config=0;j3_profile_velocity={self.profileVelocity[3]};j3_profile_acceleration={self.profileAcceleration[3]};"
         )
+        # These properties are applied individually because a batch write results in an error
         pidProperties = np.array([128, 129, 130, 131, 133, 134, 135, 136, 138, 139, 140, 141], dtype=np.int32)
         pidValues = np.array([8.89, 8.89, 8.89, 8.89, 0.012, 0.012, 0.012, 0.012, 10.23, 10.23, 10.23, 10.23], dtype=np.float64)
         try:
