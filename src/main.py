@@ -12,6 +12,7 @@ from Camera import Camera
 
 @dataclass
 class CameraSnapshot:
+    """ Data class for camera related information. Camera side of the overlay. """
     frame: np.ndarray
     ballXYZ: Optional[np.ndarray]
     ball_found: bool
@@ -25,6 +26,7 @@ class CameraSnapshot:
 
 @dataclass
 class ArmOverlayState:
+    """ Data class for arm related information. Arm side of the overlay. """
     phi_cmd: Optional[np.ndarray] = None
     pos_cmd: Optional[np.ndarray] = None
     future_robot_points: Optional[np.ndarray] = None
@@ -37,6 +39,7 @@ class ArmOverlayState:
 
 
 class SharedLatest:
+    """ SharedLatest is a thread-safe container for a single value. """
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._value = None
@@ -51,6 +54,7 @@ class SharedLatest:
 
 
 class LatestQueue:
+    """ LatestQueue is a thread-safe queue for a single value. """
     def __init__(self) -> None:
         self._q: queue.Queue = queue.Queue(maxsize=1)
 
@@ -70,6 +74,7 @@ class LatestQueue:
 
 
 def project_robot_point_to_camera(cam: Camera, xyz_robot: np.ndarray) -> tuple[int, int]:
+    """Formats and executes base-to-camera position transformation."""
     xyz_robot = np.asarray(xyz_robot, dtype=np.float64).reshape(3)
     try:
         return cam.T_RobotBase_to_Camera(xyz_robot)
@@ -78,24 +83,29 @@ def project_robot_point_to_camera(cam: Camera, xyz_robot: np.ndarray) -> tuple[i
 
 
 def draw_camera_overlay(frame: np.ndarray, snap: CameraSnapshot) -> np.ndarray:
+    """Draws the camera overlay on the frame. Camera side information."""
     out = frame.copy()
 
+    # Draw the ball if it was found
     if snap.ball_found and snap.u is not None and snap.v is not None:
         cv2.circle(out, (int(snap.u), int(snap.v)), 5, (255, 0, 0), -1)
 
     y = 30
+    # Print the ballXYZ if it was found
     if snap.ball_found and snap.ballXYZ is not None:
         x, yy, z = np.asarray(snap.ballXYZ).reshape(3)
         cv2.putText(out, f"ballXYZ: [{x:.3f}, {yy:.3f}, {z:.3f}]",
                     (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
         y += 30
 
+    # Print the ball position [pix], depth reading, and score if found
     if snap.u is not None and snap.v is not None and snap.z is not None:
         cv2.putText(out,
                     f"u,v,z,score: ({snap.u}, {snap.v}, {snap.z:.3f}, {0.0 if snap.score is None else snap.score:.3f})",
                     (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
         y += 28
 
+    # Print the score parts if found
     if snap.score_parts is not None and len(snap.score_parts) >= 6:
         sp = snap.score_parts
         cv2.putText(out,
@@ -111,14 +121,18 @@ def draw_arm_overlay(
     snap: Optional[CameraSnapshot],
     arm_state: Optional[ArmOverlayState],
 ) -> np.ndarray:
+    """Draws the arm overlay on the frame. Arm side information."""
+
     out = frame.copy()
     y_offset = 30
+    # Print the ballXYZ if it was found
     if snap is not None and snap.ball_found and snap.ballXYZ is not None:
         x, y, z = np.asarray(snap.ballXYZ).reshape(3)
         cv2.putText(out, f"ballXYZ: [{x:.3f}, {y:.3f}, {z:.3f}]",
                     (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
         y_offset += 30
 
+    # Print the phi_cmd if it was found
     if arm_state is not None and arm_state.phi_cmd is not None:
         phi = np.asarray(arm_state.phi_cmd).reshape(-1)
         cv2.putText(out,
@@ -126,22 +140,26 @@ def draw_arm_overlay(
                     (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
         y_offset += 30
 
+    # Print the pos_cmd (interception point) if it was found
     if arm_state is not None and arm_state.pos_cmd is not None:
         pos = np.asarray(arm_state.pos_cmd).reshape(-1)
         cv2.putText(out, f"pos_cmd: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]",
                     (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
         y_offset += 30
 
+    # Print the timestamp if it was found
     if snap is not None and snap.timestamp is not None:
         cv2.putText(out, f"timestamp: {snap.timestamp}",
                     (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
         y_offset += 30
 
+    # Print if a trajectory object is made (turns false once reset is called) 
     if snap is not None and arm_state is not None:
         cv2.putText(out, f"Trajectoy made: {arm_state.trajMade}",
                     (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
         y_offset += 30
 
+    # Draws the future projected points by the trajectory object
     if arm_state is not None and arm_state.future_robot_points is not None:
         for xyz in np.asarray(arm_state.future_robot_points):
             try:
@@ -150,6 +168,7 @@ def draw_arm_overlay(
             except Exception:
                 pass
 
+    # Draws the interception point
     if arm_state is not None:
         interception_xyz = arm_state.interception_point_ROBOT
         if interception_xyz is not None:
@@ -159,6 +178,7 @@ def draw_arm_overlay(
             except Exception:
                 pass
 
+    # Draws the past detected positions
     if arm_state is not None and arm_state.past_robot_points is not None:
         for xyz in np.asarray(arm_state.past_robot_points):
             try:
@@ -166,7 +186,6 @@ def draw_arm_overlay(
                 cv2.drawMarker(out, (int(u), int(v)), (0, 0, 255), cv2.MARKER_STAR, 10, 2)
             except Exception:
                 pass
-
     return out
 
 
@@ -177,12 +196,14 @@ def camera_worker(
     stop_event: threading.Event,
     ready: threading.Event,
 ) -> None:
+    """Camera worker thread. Captures images, finds the ball [pix], finds the 3D position w.r.t. the base frame and pushes them to the queue."""
+
     ready.set()
     while not stop_event.is_set():
         try:
             ballXYZ, ball_found, timestamp = cam.capture_and_process()
             
-
+            # Create and push the camera side information to the threadsafe objects
             snapshot = CameraSnapshot(
                 frame=cam.current_frame.copy() if cam.current_frame is not None else np.zeros((480, 640, 3), dtype=np.uint8),
                 ballXYZ=np.asarray(ballXYZ, dtype=np.float64).reshape(3) if ballXYZ is not None else None,
@@ -196,6 +217,7 @@ def camera_worker(
             )
             latest_cam_snapshot.set(snapshot)
 
+            # Push the ballXYZ and ball_found as long as a frame was captured
             if timestamp is not None:
                 ballXYZ_queue.put_latest((
                     np.asarray(ballXYZ, dtype=np.float64).reshape(3) if ballXYZ is not None else None,
@@ -214,38 +236,40 @@ def arm_worker(
     stop_event: threading.Event,
     ready: threading.Event,
 ) -> None:
-    arm = Arm()
+    """Arm worker thread. 
+    - Gathers XYZ information stream
+    - Runs the trajectory object and predicts the future points
+    - Finds interception with desired z-plane
+    - Pushes the arm side information to the queue.
+    """
+
+    # Creating the arm object (which communicates with the hardware) is important to happen in its own thread. 
+    # Hardware communication is not thread agnostic.
+    arm = Arm() 
     ready.set()
 
     moved = False
     start = arm.elapsed_time()
-    future_points_drawn = 20
-    past_points_drawn = 20
-    timestep = 20
+    future_points_drawn = 20 # Number of future points to draw
+    past_points_drawn = 20 # Number of past points to draw
+    timestep = 20 # Time step [ms] for the trajectory object
 
     try:
         while not stop_event.is_set() and arm.myArm.status:
             try:
+                # Grab from the queue
                 ballXYZ, ball_found, timestamp = ballXYZ_queue.get(timeout=0.02)
             except queue.Empty:
                 print("Ball XYZ queue is empty")
                 continue
 
             try:
-                # ── APPROACH SELECTOR ──────────────────────────────────────────
-                # Swap this one line to change interception strategy:
-                #
-                #   arm.ballXYZ_to_phi_cmd_ballistic(ballXYZ, ball_found, timestamp)   # #1 recommended
-                #   arm.ballXYZ_to_phi_cmd_kalman(ballXYZ, ball_found, timestamp)      # #2 noisy cameras
-                #   arm.ballXYZ_to_phi_cmd_reachability(ballXYZ, ball_found, timestamp)# #3 arm speed aware
-                #   arm.ballXYZ_to_phi_cmd_ransac(ballXYZ, ball_found, timestamp)      # #4 outlier robust
-                #   arm.ballXYZ_to_phi_cmd_ewma(ballXYZ, ball_found, timestamp)        # #5 simplest
-                #
-                # catch_z is set once in Arm.__init__ (_catch_z variable).
-                # ──────────────────────────────────────────────────────────────
+                # performs the XYZ-to-phi command. Trajectory object used for interception calculations.
                 phi_cmd = arm.ballXYZ_to_phi_cmd_ballistic(ballXYZ, ball_found, timestamp)
                 interception_point_ROBOT = arm.interception_point_ROBOT
                 interception_time = arm.interception_time
+
+                # Calculates the future points for the trajectory object
                 future_pts = []
                 if arm.ballistic_interceptor._valid:
                     for i in range(future_points_drawn):
@@ -253,7 +277,11 @@ def arm_worker(
                         pred = np.asarray(arm.ballistic_interceptor.predict_pos(t_future), dtype=np.float64).reshape(3)
                         future_pts.append(pred)
                 future_pts_arr = np.asarray(future_pts, dtype=np.float64)
+
+                # Grabs past points from the trajectory object
                 past_pts = np.asarray(arm.ballistic_interceptor._pos[-past_points_drawn:, :], dtype=np.float64)
+
+                # Push the arm side information to the queue
                 latest_arm_state.set(
                     ArmOverlayState(
                         phi_cmd=np.asarray(arm.phi_cmd, dtype=np.float64).reshape(4),
@@ -270,6 +298,8 @@ def arm_worker(
                         trajMade = arm.ballistic_interceptor._valid
                     )
                 )
+
+                # Moves the arm to the phi_cmd
                 if not moved:
                     arm.move(phi_Cmd=phi_cmd)
                     moved = True
@@ -282,6 +312,7 @@ def arm_worker(
             except Exception as e:
                 print(f"arm_worker loop error: {e}")
 
+            # Sampletime limits the rate at which the arm moves 
             if (arm.elapsed_time() - start) > arm.sampleTime and moved:
                 moved = False
                 start = start + arm.sampleTime
@@ -300,6 +331,9 @@ def manual_control_arm_worker(
     stop_event: threading.Event,
     ready: threading.Event,
 ) -> None:
+    """Thread for manual control of the arm.
+    """
+
     arm = Arm()
     ready.set()
 
@@ -393,10 +427,12 @@ def main() -> None:
 
     try:
         while arm_thread.is_alive() and not stop_event.is_set():
+            # Grab the latest camera and arm information
             snap = latest_cam_snapshot.get()
             arm_state = latest_arm_state.get()
 
-            if snap is not None:
+            # Draw the overlay
+            if snap is not None and arm_state is not None:
                 arm_view = draw_arm_overlay(snap.frame, cam, snap, arm_state)
                 cv2.imshow("arm_pov", arm_view)
 
