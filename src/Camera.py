@@ -203,8 +203,9 @@ class Camera:
         W: int = 640,
         H: int = 480,
     ) -> None:
+        """Creates a video from the video feed and uses it to create a background model for motion detection (BLOCKING)."""
 
-        # update transformation from camera frame to robot frame, create background model for motion detection
+        # If a warmup video already exists, delete it
         warmup_frames_count = 0
         if os.path.exists(warm_up_video_path):
             try:
@@ -214,10 +215,8 @@ class Camera:
                 print(f"Could not delete video {warm_up_video_path}: {e}")
         else:
             print(f"No existing video to delete at: {warm_up_video_path}")
-        # # initialize background subtractor
-        # cap = cv2.VideoCapture(
-        #     self.cameraPortID
-        # )  # This number may be different for every machine. It corresponds to the port that the camera is attached to
+       
+       # Initialize Video writer
         writer = cv2.VideoWriter(
             warm_up_video_path,
             cv2.VideoWriter_fourcc(*"mp4v"),
@@ -225,14 +224,8 @@ class Camera:
             (W, H),
             True,
         )
-        # # record warmup frames to video
-        # while warmup_frames_count < warmup_frames:
-        #     ret, frame = cap.read()
-        #     if not ret:
-        #         print("failed to grab frame")
-        #         break
-        #     else:
-        #         writer.write(frame)
+
+        # Record warmup frames to video
         while warmup_frames_count < warmup_frames:
             frames = self.pipeline.wait_for_frames()
             aligned_frames = self.align.process(frames)
@@ -243,10 +236,11 @@ class Camera:
             writer.write(frame)
             warmup_frames_count += 1
         writer.release()
-        # cap.release()
-        # Background subtractor to remove static bright objects (like the screw)
+
+        # Create background subtractor to differentiate between moving and static objects
         self.bs = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=25, detectShadows=False)
-        # Warm up background model
+        
+        # Warm up background model with warmup video
         cap = cv2.VideoCapture(warm_up_video_path)
         for i in range(warmup_frames):
             ret, frame = cap.read()
@@ -731,14 +725,13 @@ def detect_ball_center(frame_bgr, bs, ball_color: int = WHITE_BALL_COLOR, using_
 
 
 def load_calibration(path):
+    """ Loads the camera calibration file to remove fish eye distortion."""
+    
     fs = cv2.FileStorage(path, cv2.FILE_STORAGE_READ)
     if not fs.isOpened():
         raise FileNotFoundError("Could not open calibration file")
 
     camera_matrix = fs.getNode("camera_matrix").mat()
-    # camera_matrix = np.array(([800, 0, 320], [0, 800, 240],[0, 0, 1]), dtype=np.float32)
-    # dist_coeffs = np.zeros((5, 1), dtype=np.float32)
-
     dist_coeffs = fs.getNode("distortion_coefficients").mat()
 
     fs.release()

@@ -42,32 +42,29 @@ class Arm:
         self._pos_q = np.empty((self._pos_q_max, 3), dtype=np.float64) # [m] With respect to base frame
         self._time_q = np.empty(self._pos_q_max, dtype=np.float64) # [ms] time stamps for each point in trajectory
 
-        # Trajectory implementation
+        # Interceptor implementations
+
+        ## Trajectory class is out of date but kept for legacy code
         self.traj = Trajectory()
+
+        ## Ballistic interceptor is the most accurate
+        self.fixedX = 0.6 # [m] the x-coordinate in base frame for fixed catching plane
+        self._catch_z = 0.30   # [m] the z-height in base frame for fixed catching plane
+        self.ballistic_interceptor   = BallisticInterceptor(catch_z=self._catch_z)
+
+        ## Trajectory refresh variables
         self.traj_number = 0 # Number of trajectories created, used for debugging
         self.missed_frames = 0 # Count the number of frames since the ball was last seen
         self.missed_frames_max = 20 # Maximum number of missed frames before resetting the trajectory
+
+        ## Interception variables
         self.prev_phi_cmd = np.array([0, 0, 0, 0], dtype=np.float64) 
         self.interception_point_ROBOT = None # [m] Interception point calculated w.r.t. base frame
-        self.interception_time = None # [ms] time of interception
+        self.interception_time = None # [ms] time of interception w.r.t to first timestamp in interceptor class
 
+        # Transformation variables
         self.T04 = np.identity(4, dtype=np.float64) # Transformation matrix from base frame to adjusted end effector frame
         self.L_6 = 0.25 # [m] Distance added for net end effector center
-
-        
-
-        # ── Interceptor instances ──────────────────────────────────────────────
-        # catch_z: 
-        # the ball.  Set this to a height the ball actually passes through.
-        # From camera logs the ball sits near z=0.38 m, so 0.30 m is a safe
-        # catch plane that is (a) below the ball's starting height so the
-        # descending arc crosses it, and (b) above the 0.10 m workspace floor.
-        # Tune this to match your physical setup.
-        self.fixedX = 0.6 # [m] the x-coordinate in base frame for fixed catching plane
-        self._catch_z = 0.30   # [m] the z-height in base frame for fixed catching plane
-        
-        # Ball tracker 
-        self.ballistic_interceptor   = BallisticInterceptor(catch_z=self._catch_z)
 
         # Send arm to home configuration
         self.home()
