@@ -1,7 +1,4 @@
-# Source Code Reference
-
-This folder contains the runtime code for the ME423 Robotics Project.
-
+<!-- If In VS Code press Ctrl + Shift + V to view this file in a Markdown Preview -->
 ## Runtime Requirements
 
 - Python `3.12.10`
