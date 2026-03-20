@@ -4,21 +4,13 @@ APPROACH 1: Physics-First Ballistic Interception
 RANK: #1 (Best overall)
 
 Core idea:
-    Use true projectile-motion physics (constant g = -9.81 m/s²) instead of
+    Use projectile-motion physics (constant g = -9.81 m/s²) instead of
     polynomial regression.  From the first three observations we estimate the
     launch velocity via a least-squares fit that enforces  z(t) = z0 + vz*t - 0.5*g*t².
     XY are also fit as linear functions of time (constant horizontal velocity).
     The closed-form root of the z-equation directly gives t_hit for any catch
     plane height, which we then substitute into x(t) and y(t) for the XY
     interception point.
-
-Why it is the best:
-    • Physically principled – gravity is exact, not a soft constraint.
-    • Extremely stable: only 3 free parameters (x0, vx, vy, z0, vz).
-    • Fast catch-plane solving: quadratic formula → O(1).
-    • Naturally rejects non-physical fits (e.g. upward-only arcs once the
-      physics is anchored).
-    • Low latency: updates every frame once ≥3 points are available.
 """
 
 from __future__ import annotations
@@ -38,29 +30,28 @@ class BallisticInterceptor:
     and finds where it intersects a horizontal catch plane at z = catch_z.
 
     Units:
-        positions  – metres
-        timestamps – milliseconds
+        positions: meters 
+        timestamps: milliseconds
     """
     catch_z: float = 0.10          # [m] height of the catch plane above robot base
     window_size: int = 70          # maximum number of observations to keep
     min_points: int = 10            # minimum observations before prediction is valid
 
     # ── internal state ─────────────────────────────────────────────────────
-    _t:   np.ndarray = field(default_factory=lambda: np.empty(0))
-    _pos: np.ndarray = field(default_factory=lambda: np.empty((0, 3)))
+    _t:   np.ndarray = field(default_factory=lambda: np.empty(0)) # timestamps of observed points (milliseconds)
+    _pos: np.ndarray = field(default_factory=lambda: np.empty((0, 3))) # positions of observed points (meters)
     _t0:  float      = field(default=0.0)   # time origin for numerical stability [ms]
 
     # latest fit parameters
     _vx: float = 0.0   # [m/ms]
-    _vy: float = 0.0
+    _vy: float = 0.0   # [m/ms]
     _vz: float = 0.0   # [m/ms]  (positive = upward at launch)
     _x0: float = 0.0   # [m]
-    _y0: float = 0.0
-    _z0: float = 0.0
+    _y0: float = 0.0   # [m]
+    _z0: float = 0.0   # [m]
 
     _valid: bool = False   # True once a stable fit exists
 
-    # ── public API ─────────────────────────────────────────────────────────
 
     def reset(self) -> None:
         """Discard all observations and reset the estimator."""
@@ -135,7 +126,7 @@ class BallisticInterceptor:
         z = self._z0 + self._vz * dt - 0.5 * G_MMS2 * dt ** 2
         return np.array([x, y, z], dtype=np.float64)
 
-    # ── private helpers ────────────────────────────────────────────────────
+    # ──  helpers ────────────────────────────────────────────────────
 
     def _fit(self) -> None:
         """
@@ -200,72 +191,3 @@ class BallisticInterceptor:
 
     def _catch_z_check(self, dt: float) -> float:
         return self._z0 + self._vz * dt - 0.5 * G_MMS2 * dt ** 2
-
-
-# ── Integration shim ──────────────────────────────────────────────────────────
-# Drop this method into Arm class (or call from ballXYZ_to_phi_cmd).
-
-def ballXYZ_to_phi_cmd_ballistic(
-    arm,                          # your Arm instance
-    XYZ: np.ndarray,
-    ball_found: bool,
-    timestamp: float,             # milliseconds
-    catch_z: float = 0.10,        # metres
-) -> np.ndarray:
-    """
-    Replacement for arm.ballXYZ_to_phi_cmd that uses physics-first ballistic
-    interception.
-
-    Usage in Arm.__init__:
-        self.ballistic = BallisticInterceptor(catch_z=0.10)
-
-    Usage (call instead of arm.ballXYZ_to_phi_cmd):
-        phi_cmd = ballXYZ_to_phi_cmd_ballistic(arm, XYZ, ball_found, timestamp)
-    """
-    if not hasattr(arm, 'ballistic'):
-        arm.ballistic = BallisticInterceptor(catch_z=catch_z)
-
-    if not ball_found:
-        arm.missed_frames += 1
-        if arm.missed_frames >= arm.missed_frames_max:
-            arm.ballistic.reset()
-            arm.traj = type(arm.traj)()   # fresh Trajectory too
-        return arm.prev_phi_cmd
-
-    arm.missed_frames = 0
-    xyz = np.asarray(XYZ, dtype=np.float64).reshape(3)
-    if not np.all(np.isfinite(xyz)):
-        return arm.prev_phi_cmd
-
-    arm.ballistic.update(timestamp, xyz)
-    arm.traj.update_trajectory(timestamp, XYZ, arm._pos_q_max)  # keep traj for visualisation
-
-    intercept = arm.ballistic.predict_interception(timestamp)
-    if intercept is None:
-        print("[ballistic] no valid interception point yet")
-        arm.interception_point_ROBOT = None
-        arm.interception_time = None
-        return arm.prev_phi_cmd
-
-    print(f"[ballistic] intercept XYZ = {intercept}")
-    arm.interception_point_ROBOT = intercept
-
-    ik_all_solns, ik_soln = arm.qarm_inverse_kinematics(intercept, 0, arm.phi)
-    phi_seed = np.asarray(arm.phi, dtype=np.float64)
-    all_solns = np.asarray(ik_all_solns, dtype=np.float64)
-
-    best_phi = ik_soln.copy()
-    best_dist = np.linalg.norm(best_phi - phi_seed)
-    for col in range(all_solns.shape[1]):
-        cand = all_solns[:, col]
-        if np.all(np.isfinite(cand)):
-            d = np.linalg.norm(cand - phi_seed)
-            if d < best_dist:
-                best_dist = d
-                best_phi = cand
-
-    arm.phi_cmd = best_phi.copy()
-    arm.pos_cmd = intercept.copy()
-    arm.prev_phi_cmd = best_phi.copy()
-    arm.move(phi_Cmd=best_phi)
-    return best_phi
