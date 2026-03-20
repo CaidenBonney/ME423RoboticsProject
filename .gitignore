@@ -209,3 +209,4 @@ __marimo__/
 .vscode/settings.json
 .DS_Store
 src/videos/
+.python-version

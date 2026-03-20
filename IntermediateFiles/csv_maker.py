@@ -1,3 +1,4 @@
+import csv
 import cv2
 import numpy as np
 import queue
@@ -27,8 +28,8 @@ class CameraSnapshot:
 class ArmOverlayState:
     phi_cmd: Optional[np.ndarray] = None
     pos_cmd: Optional[np.ndarray] = None
-    future_robot_points: Optional[np.ndarray] = None  # shape (N, 3)
-    past_robot_points: Optional[np.ndarray] = None  # shape (M, 3)
+    future_robot_points: Optional[np.ndarray] = None
+    past_robot_points: Optional[np.ndarray] = None
     last_ballXYZ: Optional[np.ndarray] = None
     last_timestamp: Optional[float] = None
     interception_point_ROBOT: Optional[np.ndarray] = None
@@ -36,12 +37,6 @@ class ArmOverlayState:
 
 
 class SharedLatest:
-    """Thread-safe latest-value container.
-
-    Stores only the newest sample, which is what you want in a real-time
-    camera/control/display pipeline.
-    """
-
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._value = None
@@ -56,8 +51,6 @@ class SharedLatest:
 
 
 class LatestQueue:
-    """A tiny queue that always keeps the newest item only."""
-
     def __init__(self) -> None:
         self._q: queue.Queue = queue.Queue(maxsize=1)
 
@@ -76,8 +69,33 @@ class LatestQueue:
         return self._q.get(timeout=timeout)
 
 
+class CSVLogger:
+    def __init__(self, filename: str) -> None:
+        self.filename = filename
+        self._lock = threading.Lock()
+        self._ensure_header()
+
+    def _ensure_header(self) -> None:
+        with self._lock:
+            with open(self.filename, "a", newline="") as f:
+                if f.tell() == 0:
+                    writer = csv.writer(f)
+                    writer.writerow(["timestamp", "x", "y", "z"])
+
+    def write_xyz(self, timestamp: float, ballXYZ: Optional[np.ndarray]) -> None:
+        if ballXYZ is None:
+            row = [float(timestamp), None, None, None]
+        else:
+            xyz = np.asarray(ballXYZ, dtype=np.float64).reshape(3)
+            row = [float(timestamp), xyz[0], xyz[1], xyz[2]]
+
+        with self._lock:
+            with open(self.filename, "a", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(row)
+
+
 def project_robot_point_to_camera(cam: Camera, xyz_robot: np.ndarray) -> tuple[int, int]:
-    """Handles either Camera.T_RobotBase_to_Camera(x, y, z) or (..., XYZR)."""
     xyz_robot = np.asarray(xyz_robot, dtype=np.float64).reshape(3)
     try:
         return cam.T_RobotBase_to_Camera(xyz_robot)
@@ -113,20 +131,6 @@ def draw_camera_overlay(frame: np.ndarray, snap: CameraSnapshot) -> np.ndarray:
             (10, y),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
-            (255, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
-        y += 28
-
-    if snap.score_parts is not None and len(snap.score_parts) >= 6:
-        sp = snap.score_parts
-        cv2.putText(
-            out,
-            f"circ {sp[2]:.3f}, solid {sp[3]:.3f}, aspect {sp[4]:.3f}, color {sp[5]:.3f}",
-            (10, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
             (255, 255, 255),
             2,
             cv2.LINE_AA,
@@ -181,7 +185,7 @@ def draw_arm_overlay(
             2,
             cv2.LINE_AA,
         )
-    
+
     if snap is not None and snap.timestamp is not None:
         cv2.putText(
             out,
@@ -198,32 +202,16 @@ def draw_arm_overlay(
         for xyz in np.asarray(arm_state.future_robot_points):
             try:
                 u, v = project_robot_point_to_camera(cam, xyz)
-                cv2.drawMarker(
-                    out,
-                    (int(u), int(v)),
-                    (255, 255, 255),
-                    cv2.MARKER_CROSS,
-                    10,
-                    2,
-                )
-                # print(f"Projected future robot point {xyz} to camera pixel ({u}, {v})")
+                cv2.drawMarker(out, (int(u), int(v)), (255, 255, 255), cv2.MARKER_CROSS, 10, 2)
             except Exception:
                 pass
 
-    if arm_state is not None:  # and arm_state.interception_point_ROBOT is not None:
+    if arm_state is not None:
         interception_xyz = arm_state.interception_point_ROBOT
         if interception_xyz is not None:
             try:
                 u, v = project_robot_point_to_camera(cam, interception_xyz)
-                cv2.drawMarker(
-                    out,
-                    (int(u), int(v)),
-                    (0, 0, 255),
-                    cv2.MARKER_DIAMOND,
-                    30,
-                    3,
-                )
-                # print(f"Projected interception point {interception_xyz} to camera pixel ({u}, {v})")
+                cv2.drawMarker(out, (int(u), int(v)), (0, 0, 255), cv2.MARKER_DIAMOND, 30, 3)
             except Exception:
                 pass
 
@@ -231,15 +219,7 @@ def draw_arm_overlay(
         for xyz in np.asarray(arm_state.past_robot_points):
             try:
                 u, v = project_robot_point_to_camera(cam, xyz)
-                cv2.drawMarker(
-                    out,
-                    (int(u), int(v)),
-                    (0, 0, 255),
-                    cv2.MARKER_STAR,
-                    10,
-                    2,
-                )
-                # print(f"Projected future robot point {xyz} to camera pixel ({u}, {v})")
+                cv2.drawMarker(out, (int(u), int(v)), (0, 0, 255), cv2.MARKER_STAR, 10, 2)
             except Exception:
                 pass
 
@@ -250,37 +230,15 @@ def camera_worker(
     cam: Camera,
     latest_cam_snapshot: SharedLatest,
     ballXYZ_queue: LatestQueue,
+    csv_logger: CSVLogger,
     stop_event: threading.Event,
     ready: threading.Event,
 ) -> None:
     ready.set()
 
-    # # Uncomment entire block for manual control of arm
-    # # region: Manual Control of Arm
-    # while not stop_event.is_set():
-    #     try:
-    #         ballXYZ, ball_found, timestamp = [0.75, 0, 0.3], True, time.time()
-    #         ballXYZ_queue.put_latest(
-    #             (
-    #                 np.asarray(ballXYZ, dtype=np.float64).reshape(3),
-    #                 bool(ball_found),
-    #                 float(timestamp),
-    #             )
-    #         )
-    #     except Exception as e:
-    #         print(f"camera_worker error: {e}")
-    #         time.sleep(0.01)
-    # return
-    # # endregion
-
     while not stop_event.is_set():
         try:
-            time1camera = time.perf_counter()
             ballXYZ, ball_found, timestamp = cam.capture_and_process()
-            duration_camera = time.perf_counter() - time1camera
-            # print(f"capture_and_process duration: {duration_camera:.4f} seconds")
-
-            time2camera = time.perf_counter()
             frame = np.asarray(cam.current_frame).copy()
 
             snapshot = CameraSnapshot(
@@ -295,8 +253,9 @@ def camera_worker(
                 score_parts=None if cam.score_parts is None else tuple(cam.score_parts),
             )
             latest_cam_snapshot.set(snapshot)
-            duration_snapshot = time.perf_counter() - time2camera
-            # print(f"CameraSnapshot creation and set duration: {duration_snapshot:.4f} seconds")
+
+            # Always log, even if ballXYZ is None
+            csv_logger.write_xyz(float(timestamp), ballXYZ)
 
             if ballXYZ is not None:
                 ballXYZ_queue.put_latest(
@@ -306,6 +265,7 @@ def camera_worker(
                         float(timestamp),
                     )
                 )
+
         except Exception as e:
             print(f"camera_worker error: {e}")
             time.sleep(0.01)
@@ -336,31 +296,18 @@ def arm_worker(
                 continue
 
             try:
+                phi_cmd = arm.ballXYZ_to_phi_cmd(ballXYZ, ball_found, timestamp)
+                interception_point_ROBOT = arm.interception_point_ROBOT
+                interception_time = arm.interception_time
                 future_pts = []
-                past_pts = []
                 if arm.traj.t.size > 0:
                     for i in range(future_points_drawn):
-                        # t_future = timestamp + i * timestep
                         t_future = arm.traj.t[-1] + i * timestep
                         pred = np.asarray(arm.traj.predict_pos(t_future), dtype=np.float64).reshape(3)
                         future_pts.append(pred)
-                        past_pts = np.asarray(arm.traj.pos[-past_points_drawn:, :], dtype=np.float64)
                 future_pts_arr = np.asarray(future_pts, dtype=np.float64)
-                scaled_vel = past_pts[-1, :3] - past_pts[0, :3] if len(past_pts) >= 2 else np.zeros(3)
-                y_sign = np.sign(scaled_vel[1]) if scaled_vel[1] != 0 else 0
-                ball_XYZ_with_offset = np.asarray(ballXYZ, dtype=np.float64).reshape(3) + np.array([0.0, scaled_vel[1]*0.8, 0.0])
-                z_bounded = max(0.1, min(0.6, ball_XYZ_with_offset[2]))
-                ball_XYZ_with_offset[2] = z_bounded
-                y_bounded = max(-0.5, min(0.5, ball_XYZ_with_offset[1]))
-                ball_XYZ_with_offset[1] = y_bounded
-                print(f"Scaled velocity: {scaled_vel}, y_sign: {y_sign}, z_bounded: {z_bounded}")
-                # ballXYZ_with_offset = np.asarray(ballXYZ, dtype=np.float64).reshape(3) + np.array([0.0, y_sign*1.1, 0.0])
-                phi_cmd = arm.ballXYZ_to_phi_cmd_no_traj_fixed_x(ball_XYZ_with_offset, ball_found, timestamp, fixed_x=0.6)
-                interception_point_ROBOT = arm.interception_point_ROBOT
-                interception_time = arm.interception_time
-                
-                # for i in range(past_points_drawn):
                 past_pts = np.asarray(arm.traj.pos[-past_points_drawn:, :], dtype=np.float64)
+
                 latest_arm_state.set(
                     ArmOverlayState(
                         phi_cmd=np.asarray(arm.phi_cmd, dtype=np.float64).reshape(4),
@@ -384,6 +331,7 @@ def arm_worker(
 
             except ValueError as e:
                 print(f"Command error: {e}")
+                arm.home()
             except EOFError:
                 break
             except Exception as e:
@@ -398,7 +346,6 @@ def arm_worker(
         except Exception as e:
             print(f"Terminate error: {e}")
 
-        # Stop the entire program when the arm is terminated
         stop_event.set()
 
 
@@ -410,40 +357,23 @@ def manual_control_arm_worker(
     ready: threading.Event,
 ) -> None:
     arm = Arm()
-    # arm.print_measurement_check("after init at home")
     ready.set()
 
     moved = False
     start = arm.elapsed_time()
-    test_pose_1 = np.array([0.2, 0.0, 0.0, 0.0], dtype=np.float64)
-    test_pose_2 = np.array([0.35, -0.2, 0.15, 0.0], dtype=np.float64)
     try:
-        phi_cmd = test_pose_1.copy()
         while not stop_event.is_set() and arm.myArm.status:
             try:
+                phi_cmd = np.array([0.2, 0, 0, 0], dtype=np.float64)
                 if not moved:
                     inp = input("test input: ")
                     if inp == "home":
                         arm.home()
-                        time.sleep(1.5)
-                        arm.print_measurement_check("after moving home")
-                        continue
-                    elif inp == "test1":
-                        phi_cmd = test_pose_1.copy()
-                    elif inp == "test2":
-                        phi_cmd = test_pose_2.copy()
-                    elif inp == "check":
-                        arm.print_measurement_check("manual measurement check")
                         continue
                     elif len(inp.split(",")) == 4:
                         inp_ls = inp.split(",")
                         phi_cmd = np.array(
-                            [
-                                float(inp_ls[0]),
-                                float(inp_ls[1]),
-                                float(inp_ls[2]),
-                                float(inp_ls[3]),
-                            ],
+                            [float(inp_ls[0]), float(inp_ls[1]), float(inp_ls[2]), float(inp_ls[3])],
                             dtype=np.float64,
                         )
                     elif inp == "phi":
@@ -458,17 +388,15 @@ def manual_control_arm_worker(
 
                     print(f"moving arm with command: {phi_cmd}")
                     arm.move(phi_Cmd=phi_cmd)
-                    time.sleep(1.5)
-                    arm.print_measurement_check(f"after moving to {phi_cmd}")
                     moved = True
 
-            except ValueError as e:
-                print(f"Command error: {e}, phi_cmd: {phi_cmd}")
+            except ValueError:
                 arm.home()
             except EOFError:
                 break
             except Exception as e:
                 print(f"arm_worker loop error: {e}")
+
             if (arm.elapsed_time() - start) > arm.sampleTime and moved:
                 moved = False
                 start = start + arm.sampleTime
@@ -478,31 +406,30 @@ def manual_control_arm_worker(
         except Exception as e:
             print(f"Terminate error: {e}")
 
-        # Stop the entire program when the arm is terminated
         stop_event.set()
 
 
 def main() -> None:
     stop_event = threading.Event()
 
-    cam = Camera()  # Comment out for manual control of arm
-    # cam = None    # Uncomment for manual control of arm  # fmt: skip
+    cam = Camera()
     latest_cam_snapshot = SharedLatest()
     latest_arm_state = SharedLatest()
     ballXYZ_queue = LatestQueue()
+    
+    csv_logger = CSVLogger("src/camera_xyz_log.csv")
 
     cam_ready = threading.Event()
     arm_ready = threading.Event()
 
     cam_thread = threading.Thread(
         target=camera_worker,
-        args=(cam, latest_cam_snapshot, ballXYZ_queue, stop_event, cam_ready),
+        args=(cam, latest_cam_snapshot, ballXYZ_queue, csv_logger, stop_event, cam_ready),
         daemon=False,
     )
 
     arm_thread = threading.Thread(
-        # target=manual_control_arm_worker,  # Uncomment for manual control of arm  # fmt: skip
-        target=arm_worker,  # Comment out for manual control of arm  # fmt: skip
+        target=arm_worker,
         args=(latest_cam_snapshot, latest_arm_state, ballXYZ_queue, stop_event, arm_ready),
         daemon=False,
     )
@@ -519,15 +446,11 @@ def main() -> None:
             arm_state = latest_arm_state.get()
 
             if snap is not None:
+                arm_view = draw_arm_overlay(snap.frame, cam, snap, arm_state)
+                cv2.imshow("arm_pov", arm_view)
 
-                # camera_view = draw_camera_overlay(snap.frame, snap)
-                # arm_view = draw_arm_overlay(snap.frame, cam, snap, arm_state)
-
-                # cv2.imshow("camera_pov", camera_view)
-                # cv2.imshow("arm_pov", arm_view)
-                pass
             key = cv2.waitKey(1)
-            if key == 27:  # ESC
+            if key == 27:
                 break
 
             time.sleep(0.001)
