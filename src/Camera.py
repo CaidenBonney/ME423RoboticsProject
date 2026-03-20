@@ -38,7 +38,7 @@ ASPECT_MAX = 1.8
 
 WARMUP_FRAMES = 30 # number of frames to capture is feed to background subtractor
 
-CALIBRATION_FILE = "camera_calib.yml"
+CALIBRATION_FILE = "src/camera_calib.yml"
 
 
 class Camera:
@@ -134,7 +134,7 @@ class Camera:
         self.startTime = time.time()
         self.cam_calibration()
 
-    def cam_calibration(self, path: str = "camera_calib.yml") -> None:
+    def cam_calibration(self, path: str = "src/camera_calib.yml") -> None:
         """Executes the following camera setup steps:
         1. Loads the camera calibration file to remove fish eye distortion.
         2. Solves the camera to robot transformation.

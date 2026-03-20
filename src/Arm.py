@@ -13,7 +13,7 @@ spec.loader.exec_module(qarm)
 
 from hal.products.qarm import QArmUtilities
 from Trajectory import Trajectory
-from intercept_1_ballistic import BallisticInterceptor
+from Ballistic import BallisticInterceptor
 
 
 
