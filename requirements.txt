@@ -1,7 +1,0 @@
-pyrealsense2
-opencv-python
-pyserial
-numpy
-pandas
-matplotlib
-scipy
