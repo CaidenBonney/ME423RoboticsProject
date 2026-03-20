@@ -1,6 +1,6 @@
 <!-- If In VS Code press Ctrl + Shift + V to view this file in a Markdown Preview -->
 # Complete Code Description is in README.md in the src folder
-[Complete Code Description] (./src/README.md)
+[Complete Code Description](./src/README.md)
 
 
 # Requirements 
